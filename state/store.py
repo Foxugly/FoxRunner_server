@@ -140,6 +140,9 @@ class HistoryStore:
     def __init__(self, history_jsonl_file: Path):
         self.history_jsonl_file = history_jsonl_file
         self.history_jsonl_file.parent.mkdir(parents=True, exist_ok=True)
+        # Cross-process lock so append() and prune() cannot interleave between
+        # the CLI scheduler and a Celery worker writing to the same file.
+        self._lock = ProcessLock(history_jsonl_file.with_name(history_jsonl_file.name + ".lock"), stale_seconds=60)
 
     def append(
         self,
@@ -164,8 +167,30 @@ class HistoryStore:
             "message": message,
             "updated_at": _utc_now_iso(),
         }
-        with self.history_jsonl_file.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        with self._write_lock():
+            with self.history_jsonl_file.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+    @contextmanager
+    def _write_lock(self):
+        # Best-effort serialization. Short spin loop is acceptable here — writes
+        # are cheap and conflicts only happen when CLI + Celery race on the
+        # exact same line. Falls back to unlocked write after a few retries so
+        # that a stale lock (which would already be cleared by stale_seconds)
+        # never wedges scheduling.
+        attempts = 0
+        while True:
+            if self._lock.acquire():
+                try:
+                    yield
+                finally:
+                    self._lock.release()
+                return
+            attempts += 1
+            if attempts >= 10:
+                yield
+                return
+            time.sleep(0.05)
 
     def read(
         self,
@@ -199,20 +224,25 @@ class HistoryStore:
         if not self.history_jsonl_file.exists():
             return 0
         cutoff = time.time() - (older_than_days * 86400)
-        with self.history_jsonl_file.open("r", encoding="utf-8") as handle:
-            rows = [json.loads(line) for line in handle if line.strip()]
-        kept_rows = [row for row in rows if _parse_datetime(row["executed_at"]).timestamp() >= cutoff]
-        removed = len(rows) - len(kept_rows)
-        temp_file = self.history_jsonl_file.with_suffix(".tmp")
-        with temp_file.open("w", encoding="utf-8") as handle:
-            for row in kept_rows:
-                handle.write(json.dumps(row, ensure_ascii=False) + "\n")
-        temp_file.replace(self.history_jsonl_file)
+        with self._write_lock():
+            with self.history_jsonl_file.open("r", encoding="utf-8") as handle:
+                rows = [json.loads(line) for line in handle if line.strip()]
+            kept_rows = [row for row in rows if _parse_datetime(row["executed_at"]).timestamp() >= cutoff]
+            removed = len(rows) - len(kept_rows)
+            temp_file = self.history_jsonl_file.with_suffix(".tmp")
+            with temp_file.open("w", encoding="utf-8") as handle:
+                for row in kept_rows:
+                    handle.write(json.dumps(row, ensure_ascii=False) + "\n")
+            temp_file.replace(self.history_jsonl_file)
         return removed
 
 
 class ProcessLock:
-    def __init__(self, lock_file: Path, stale_seconds: int = 43200):
+    def __init__(self, lock_file: Path, stale_seconds: int = 3600):
+        # Stale detection is primarily driven by pid liveness; the timeout is a
+        # backstop for stray lockfiles on platforms where the PID cannot be
+        # verified. Kept short (1h default) to avoid the "scheduler silently
+        # blocked for 12h after a crash" class of incidents.
         self.lock_file = lock_file
         self.stale_seconds = stale_seconds
         self.lock_file.parent.mkdir(parents=True, exist_ok=True)

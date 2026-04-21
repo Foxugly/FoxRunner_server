@@ -38,7 +38,9 @@ def build_slots(raw_slots: tuple[tuple[tuple[int, ...], int, int, int, int], ...
 
 
 def make_dt(base: datetime, hour: int, minute: int, second: int = 0) -> datetime:
-    return base.replace(hour=hour, minute=minute, second=second, microsecond=0)
+    # Use the constructor rather than replace() so that zoneinfo resolves the
+    # correct UTC offset at the DST transition (replace() keeps stale fold=0).
+    return datetime(base.year, base.month, base.day, hour, minute, second, 0, tzinfo=base.tzinfo)
 
 
 def random_datetime_in_slot(day: datetime, slot: TimeSlot, now: datetime | None = None) -> datetime | None:
@@ -47,6 +49,9 @@ def random_datetime_in_slot(day: datetime, slot: TimeSlot, now: datetime | None 
 
     if now is not None and day.date() == now.date() and now > start_dt:
         start_dt = now.replace(microsecond=0)
+        # Normalize to the wall-clock offset of the day so comparisons stay consistent.
+        if start_dt.tzinfo is None and day.tzinfo is not None:
+            start_dt = start_dt.replace(tzinfo=day.tzinfo)
 
     if start_dt >= end_dt:
         return None
@@ -96,12 +101,7 @@ def find_next_pending_execution(
         if not is_slot_executed(slot_key):
             return next_run, slot, day
 
-        probe = day.replace(
-            hour=slot.end_hour,
-            minute=slot.end_minute,
-            second=1,
-            microsecond=0,
-        )
+        probe = make_dt(day, slot.end_hour, slot.end_minute, 1)
 
     raise RuntimeError("Aucun creneau en attente trouve.")
 

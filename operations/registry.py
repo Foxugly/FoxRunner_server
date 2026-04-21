@@ -108,7 +108,5 @@ def build_parallel_safe_steps() -> frozenset[str]:
             "require_enterprise_network",
             "set_context",
             "format_context",
-            "extract_text_to_context",
-            "extract_attribute_to_context",
         }
     )

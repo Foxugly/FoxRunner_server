@@ -382,7 +382,10 @@ def _execute_hook_steps(
             dry_run=dry_run,
             parallel_safe_steps=parallel_safe_steps,
         )
-    context["__driver__"] = driver_ref["driver"]
+    # Only propagate the driver when hooks actually produced one; otherwise we
+    # would clobber the driver already held by run_task and leak the original.
+    if driver_ref["driver"] is not None:
+        context["__driver__"] = driver_ref["driver"]
 
 
 def _capture_failure_screenshot(driver, context: dict[str, str], logger: Logger, dry_run: bool, artifacts_dir: Path | None) -> str | None:

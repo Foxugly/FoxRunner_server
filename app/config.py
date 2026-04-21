@@ -113,7 +113,7 @@ def load_config() -> AppConfig:
             countdown_threshold_seconds=int(_env_or_default("APP_COUNTDOWN_THRESHOLD_SECONDS", "300")),
             network_retry_seconds=int(_env_or_default("APP_NETWORK_RETRY_SECONDS", "10")),
             planning_notification_cooldown_seconds=int(_env_or_default("APP_PLANNING_NOTIFICATION_COOLDOWN_SECONDS", "900")),
-            lock_stale_seconds=int(_env_or_default("APP_LOCK_STALE_SECONDS", "43200")),
+            lock_stale_seconds=int(_env_or_default("APP_LOCK_STALE_SECONDS", "3600")),
             state_dir=state_dir,
             lock_file=state_dir / "scheduler.lock",
             execution_history_file=state_dir / "executions.json",

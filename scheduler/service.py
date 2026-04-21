@@ -169,7 +169,8 @@ class SchedulerService:
     def prune_history(self, *, older_than_days: int) -> int:
         return self.history_store.prune(older_than_days=older_than_days)
 
-    def run_check_mode(self, dry_run: bool) -> int:
+    def run_check_mode(self, dry_run: bool = True) -> int:
+        del dry_run
         self.logger.info("Mode check actif.")
         self.logger.info(f"Timezone active: {self.runtime.timezone}")
         self.logger.info(f"Notifications actives: {self.notifier.is_enabled()}")
@@ -190,7 +191,7 @@ class SchedulerService:
             self.logger,
             scenario=scenario,
             scenario_data=self.scenario_data,
-            dry_run=True if not dry_run else dry_run,
+            dry_run=True,
             notifier=self.notifier,
             network_check=lambda: self.network_guard.is_default_network_available(),
             network_check_by_key=self.network_guard.is_network_available_by_key,
