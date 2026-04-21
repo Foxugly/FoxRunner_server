@@ -20,18 +20,27 @@ Configure Graph only if mail/webhooks are enabled.
 
 ## 2. Install And Migrate
 
+Production installs runtime dependencies only:
+
 ```powershell
 python -m pip install -r requirements.txt
 alembic upgrade head
 ```
 
+Development environments add lint, coverage, and pre-commit tooling:
+
+```powershell
+python -m pip install -r requirements-dev.txt
+```
+
 ## 3. Create First Admin
 
 ```powershell
+$env:BOOTSTRAP_PASSWORD = "<strong-password>"
 python scripts/bootstrap_admin.py --email admin@example.com
 ```
 
-The script creates a verified superuser or promotes an existing user.
+`--password` is no longer accepted on the command line — set `BOOTSTRAP_PASSWORD` or let the script prompt via `getpass`. The script creates a verified superuser or promotes an existing user.
 
 ## 4. Start Services
 

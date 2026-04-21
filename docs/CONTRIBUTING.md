@@ -2,12 +2,12 @@
 
 ## Workflow
 
-1. Install dependencies from `requirements.txt`.
+1. Install dependencies from `requirements-dev.txt` (runtime deps + ruff, coverage, pre-commit).
 2. Add or update tests with behavioral changes.
 3. Run `.\scripts\ci.ps1` on Windows.
 4. Regenerate `openapi.json` when API contracts change.
 5. Add an Alembic migration for DB schema changes.
-6. Update docs when behavior, operations, or environment variables change.
+6. Update `CHANGELOG.md` and the relevant `docs/*.md` when behavior, operations, or environment variables change.
 
 ## Tests
 

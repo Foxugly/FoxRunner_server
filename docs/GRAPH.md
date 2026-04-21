@@ -46,7 +46,18 @@ Routes:
 
 Graph validates a webhook by calling it with `validationToken`. FoxRunner returns the token as `text/plain`.
 
-Notifications are accepted only when `clientState` matches `GRAPH_WEBHOOK_CLIENT_STATE`, then persisted in `graph_notifications`.
+### clientState validation
+
+Notifications are authenticated via the `clientState` shared secret. FoxRunner accepts a delivery when its `clientState` matches either:
+
+- the value saved on the target subscription at creation time (`graph_subscriptions.client_state`), or
+- the current `GRAPH_WEBHOOK_CLIENT_STATE` global.
+
+Accepting both supports rotation: rotating the global does not invalidate subscriptions already registered with an older value, and rotating a single subscription does not require touching the global.
+
+In production (`APP_ENV=production`) `GRAPH_WEBHOOK_CLIENT_STATE` is required; a webhook call returns 503 if it is empty. When neither the subscription nor the global yields an expected value and `GRAPH_WEBHOOK_REQUIRE_SUBSCRIPTION=true`, the webhook returns 403 `clientState Graph absent.`.
+
+Accepted notifications are persisted in `graph_notifications`.
 
 Subscriptions created through `POST /graph/subscriptions` are persisted in `graph_subscriptions`. Renew and delete operations call Microsoft Graph first, then update the local database and audit log.
 

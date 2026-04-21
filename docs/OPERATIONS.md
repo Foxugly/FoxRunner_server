@@ -161,7 +161,7 @@ docker compose config
 Common targets:
 
 ```powershell
-make install
+make install   # installs requirements-dev.txt (ruff, coverage, pre-commit + runtime deps)
 make test
 make migrate
 make run-api
@@ -171,6 +171,8 @@ make reset-local
 make docker-up
 make docker-down
 ```
+
+Production deployments install only the runtime subset with `python -m pip install -r requirements.txt`.
 
 On Windows, use a shell with `make` installed, or run the commands from the target directly.
 
@@ -187,15 +189,16 @@ APP_LOG_BACKUP_COUNT=3
 
 ## Rate Limiting
 
-In-process rate limiting protects auth and Graph webhook routes by default:
+API rate limiting protects auth and Graph webhook routes. The limiter uses a Redis sliding window shared across workers when Redis is reachable, and falls back to an in-process counter otherwise (single-worker dev only):
 
 ```env
 API_RATE_LIMIT_ENABLED=true
 API_RATE_LIMIT_WINDOW_SECONDS=60
 API_RATE_LIMIT_MAX_REQUESTS=60
+API_RATE_LIMIT_REDIS_URL=redis://redis:6379/2   # optional; falls back to CELERY_BROKER_URL
 ```
 
-For production, keep reverse-proxy or gateway rate limiting as the primary protection. Example Nginx baseline:
+For production, keep reverse-proxy or gateway rate limiting as the primary protection — the in-app limiter is a safety net. Example Nginx baseline:
 
 ```nginx
 limit_req_zone $binary_remote_addr zone=smiley_auth:10m rate=5r/s;

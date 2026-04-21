@@ -32,9 +32,12 @@ Run these processes separately:
 
 - Terminate HTTPS at the reverse proxy.
 - Restrict CORS with `API_CORS_ORIGINS`.
-- Configure reverse-proxy rate limiting for `/api/v1/auth/*`, `/api/v1/graph/webhook`, and `/api/v1/graph/lifecycle`.
+- Configure reverse-proxy rate limiting for `/api/v1/auth/*`, `/api/v1/graph/webhook`, and `/api/v1/graph/lifecycle`. The built-in limiter is a safety net, not the primary control.
+- Set `API_RATE_LIMIT_REDIS_URL` (or rely on the Celery broker URL) so the in-app limiter uses a shared Redis sliding window across workers.
+- Set `GRAPH_WEBHOOK_CLIENT_STATE` — production refuses webhook deliveries when it is empty.
 - Store Graph and auth secrets outside source control.
 - Rotate `GRAPH_CLIENT_SECRET` and `AUTH_SECRET` through your deployment secret manager.
+- Do not deploy `docker-compose.yml` as-is in production; it is a local stack. It reads `POSTGRES_*` and `AUTH_SECRET` from a local `.env` that must never be committed.
 
 ## Data
 
@@ -85,5 +88,5 @@ Before promoting a release:
 - `python -m unittest`
 - `alembic upgrade head` on a disposable database
 - `python scripts/export_openapi.py`
-- `docker compose config`
-- Docker image build
+- `docker compose config` (requires `POSTGRES_*` and `AUTH_SECRET` set in `.env`)
+- Docker image build (multi-stage, runs as non-root `app`, ships `HEALTHCHECK` on `/api/v1/health`)
