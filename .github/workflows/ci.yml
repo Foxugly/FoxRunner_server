@@ -16,8 +16,8 @@ jobs:
       API_LOG_HTTP_ENABLED: "false"
       APP_LOG_CONSOLE_ENABLED: "false"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Install dependencies
@@ -39,6 +39,10 @@ jobs:
           alembic upgrade head
           alembic downgrade base
           alembic upgrade head
+          # TODO: once api/models.py declares every Index() from the migration
+          # chain (including the ones added by 0007 and 0011) and picks up the
+          # GUID type for user.id, enable `alembic check` here to catch
+          # further schema drift at PR time.
       - name: Export OpenAPI
         run: python scripts/export_openapi.py
       - name: Check OpenAPI
