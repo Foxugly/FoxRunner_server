@@ -11,7 +11,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt requirements.lock ./
-RUN pip install --prefix=/install --require-hashes=false -r requirements.lock
+RUN pip install --prefix=/install -r requirements.lock
 
 
 FROM python:3.12-slim AS runtime
