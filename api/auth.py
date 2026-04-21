@@ -17,10 +17,21 @@ from api.timezones import DEFAULT_TIMEZONE, validate_timezone_name
 
 SECRET = os.getenv("AUTH_SECRET", "change-me-before-production-32-bytes-minimum")
 JWT_LIFETIME_SECONDS = int(os.getenv("AUTH_JWT_LIFETIME_SECONDS", "3600"))
-APP_ENV = os.getenv("APP_ENV", "development").lower()
 
-if APP_ENV in {"production", "prod"} and SECRET == "change-me-before-production-32-bytes-minimum":
-    raise RuntimeError("AUTH_SECRET doit etre configure en production.")
+DEFAULT_AUTH_SECRET = "change-me-before-production-32-bytes-minimum"
+AUTH_SECRET_MIN_LENGTH = 32
+
+
+def ensure_production_auth_secret(app_env: str, secret: str) -> None:
+    # Centralized check so api.main.lifespan and any ad-hoc entrypoint use the same
+    # invariants. Called from the FastAPI lifespan — not at import time, so tests
+    # that import api.auth in a non-production env are unaffected.
+    if app_env.lower() not in {"production", "prod"}:
+        return
+    if secret == DEFAULT_AUTH_SECRET:
+        raise RuntimeError("AUTH_SECRET doit etre configure en production.")
+    if len(secret) < AUTH_SECRET_MIN_LENGTH:
+        raise RuntimeError(f"AUTH_SECRET doit contenir au moins {AUTH_SECRET_MIN_LENGTH} caracteres en production.")
 
 
 class UserRead(schemas.BaseUser[uuid.UUID]):

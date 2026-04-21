@@ -12,10 +12,11 @@ from api.auth import (
     UserRead,
     UserUpdate,
     auth_backend,
+    ensure_production_auth_secret,
     fastapi_users,
 )
 from api.catalog import seed_catalog_from_json
-from api.db import create_db_and_tables, get_async_session
+from api.db import async_session_maker, create_db_and_tables
 from api.dependencies import get_config as get_config
 from api.dependencies import get_service as get_service
 from api.errors import install_error_handlers
@@ -55,12 +56,11 @@ OPENAPI_TAGS = [
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    if os.getenv("APP_ENV", "local").lower() == "production" and len(os.getenv("AUTH_SECRET", "")) < 32:
-        raise RuntimeError("AUTH_SECRET doit contenir au moins 32 caracteres en production.")
+    ensure_production_auth_secret(os.getenv("APP_ENV", "local"), os.getenv("AUTH_SECRET", ""))
     if os.getenv("API_CREATE_TABLES_ON_STARTUP", "true").lower() == "true":
         await create_db_and_tables()
     config = load_config()
-    async for session in get_async_session():
+    async with async_session_maker() as session:
         await seed_catalog_from_json(session, config.runtime.scenarios_file, config.runtime.slots_file)
     yield
 

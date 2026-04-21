@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import HTTPException, Request, status
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.models import IdempotencyRecord
@@ -50,7 +51,21 @@ async def store_idempotent_response(
         status_code=status_code,
     )
     session.add(record)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        # A concurrent request stored the same (user_id, key) first. Surface the
+        # stored result instead of bubbling up a 500 — consistent with the spec
+        # that guarantees identical responses for the same Idempotency-Key.
+        await session.rollback()
+        existing = await session.scalar(
+            select(IdempotencyRecord).where(IdempotencyRecord.user_id == user_id, IdempotencyRecord.key == key)
+        )
+        if existing is not None and existing.request_fingerprint != _fingerprint(payload):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Idempotency-Key reutilisee avec un payload different.",
+            )
 
 
 def _fingerprint(payload: Any) -> str:
