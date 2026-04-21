@@ -14,6 +14,7 @@ from api.pagination import page_response
 from api.schemas import (
     AdminConfigChecksPayload,
     AdminDbStatsPayload,
+    AdminExportPayload,
     AdminImportDryRunPayload,
     AdminUserUpdatePayload,
     AppSettingPagePayload,
@@ -91,7 +92,7 @@ async def admin_db_stats(
     return await db_stats(session)
 
 
-@router.get("/admin/export")
+@router.get("/admin/export", response_model=AdminExportPayload)
 async def admin_export_catalog(
     config: AppConfig = Depends(get_config),
     session: AsyncSession = Depends(get_async_session),

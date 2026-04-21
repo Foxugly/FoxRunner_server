@@ -32,7 +32,7 @@ class PageResponsePayload(BaseModel):
 
 
 class UserPagePayload(BaseModel):
-    items: list["UserPayload"]
+    items: list[UserPayload]
     total: int
     limit: int
     offset: int
@@ -322,6 +322,14 @@ class AdminImportDryRunPayload(BaseModel):
     imported: bool | None = None
 
 
+class AdminExportPayload(BaseModel):
+    # Scenarios and slots are passed through as DB-sourced documents; both
+    # carry backend-defined shapes, so we stop at dict[str, Any] rather than
+    # duplicating the scenario/slot DSL schemas here.
+    scenarios: dict[str, Any]
+    slots: dict[str, Any]
+
+
 class RetentionPayload(BaseModel):
     removed: dict[str, int]
 
@@ -437,7 +445,7 @@ class SlotPayload(BaseModel):
         return value
 
     @model_validator(mode="after")
-    def validate_time_window(self) -> "SlotPayload":
+    def validate_time_window(self) -> SlotPayload:
         _validate_time(self.start, "start")
         _validate_time(self.end, "end")
         if self.start >= self.end:
@@ -465,7 +473,7 @@ class SlotUpdatePayload(BaseModel):
         return SlotPayload.validate_days(value)
 
     @model_validator(mode="after")
-    def validate_optional_time_window(self) -> "SlotUpdatePayload":
+    def validate_optional_time_window(self) -> SlotUpdatePayload:
         if self.start is not None:
             _validate_time(self.start, "start")
         if self.end is not None:
