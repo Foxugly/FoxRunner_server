@@ -6,7 +6,11 @@ on:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
     env:
       APP_ENV: test
       API_LOG_HTTP_ENABLED: "false"
@@ -19,7 +23,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
       - name: Compile
         run: python -m compileall api app cli migrations network operations scenarios scheduler scripts state tests
       - name: Lint
@@ -41,7 +45,18 @@ jobs:
         run: python scripts/check_openapi.py
       - name: Check docs
         run: python scripts/check_docs.py
+      - name: Check .env.example
+        run: python scripts/check_env_example.py
+      - name: Pre-commit
+        run: pre-commit run --all-files --show-diff-on-failure
       - name: Docker Compose config
+        if: matrix.os == 'ubuntu-latest'
+        env:
+          POSTGRES_DB: ci
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          AUTH_SECRET: change-me-before-production-32-bytes-minimum-ci
         run: docker compose config
       - name: Docker build
+        if: matrix.os == 'ubuntu-latest'
         run: docker build .
