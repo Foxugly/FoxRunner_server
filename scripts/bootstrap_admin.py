@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import getpass
+import os
 import sys
 from pathlib import Path
 
@@ -17,9 +18,11 @@ from api.models import User
 async def main() -> int:
     parser = argparse.ArgumentParser(description="Create or promote a FoxRunner superuser.")
     parser.add_argument("--email", required=True)
-    parser.add_argument("--password")
     args = parser.parse_args()
-    password = args.password or getpass.getpass("Password: ")
+    password = os.getenv("BOOTSTRAP_PASSWORD") or getpass.getpass("Password: ")
+    if not password:
+        print("error: password required", file=sys.stderr)
+        return 2
     async with async_session_maker() as session:
         existing = await session.scalar(select(User).where(User.email == args.email))
         if existing is not None:

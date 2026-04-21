@@ -1,0 +1,6 @@
+# Development and CI tooling. Not required at runtime — not installed in the
+# production Docker image.
+-r requirements.txt
+ruff
+coverage
+pre-commit

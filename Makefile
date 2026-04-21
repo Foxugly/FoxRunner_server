@@ -6,7 +6,7 @@ CELERY := ./.venv/Scripts/celery.exe
 .PHONY: install lint format test coverage migrate migration migrate-test run-api run-worker run-beat reset-local docker-up docker-down backup-sqlite restore-sqlite openapi openapi-check docs-check audit smoke ci clean
 
 install:
-	$(PYTHON) -m pip install -r requirements.txt
+	$(PYTHON) -m pip install -r requirements-dev.txt
 
 test:
 	$(PYTHON) -m unittest

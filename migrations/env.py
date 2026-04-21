@@ -7,10 +7,12 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+# Import required so that every model is registered on Base.metadata before autogenerate.
 import api.models  # noqa: F401
 from api.db import DATABASE_URL, Base
 
 config = context.config
+# Override the placeholder URL from alembic.ini with the effective URL resolved from AUTH_DATABASE_URL.
 config.set_main_option("sqlalchemy.url", DATABASE_URL)
 
 if config.config_file_name is not None:
