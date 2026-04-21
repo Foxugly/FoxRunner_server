@@ -165,19 +165,26 @@ async def save_graph_notifications(session: AsyncSession, payload: dict[str, Any
     notifications = payload.get("value", [])
     if not isinstance(notifications, list):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Payload Graph invalide.")
-    expected_state = GRAPH_WEBHOOK_CLIENT_STATE
     count = 0
+    require_known = await _requires_known_subscription()
+    app_env_prod = os.getenv("APP_ENV", "development").lower() in {"production", "prod"}
+    if app_env_prod and not GRAPH_WEBHOOK_CLIENT_STATE:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="GRAPH_WEBHOOK_CLIENT_STATE doit etre configure en production.")
     for item in notifications:
         if not isinstance(item, dict):
             continue
-        client_state = item.get("clientState")
-        if expected_state and client_state != expected_state:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="clientState Graph invalide.")
         subscription_id = str(item.get("subscriptionId", ""))
         change_type = str(item.get("changeType", item.get("lifecycleEvent", "")))
         resource = str(item.get("resource", ""))
         lifecycle_event = item.get("lifecycleEvent") if lifecycle else None
-        if await _requires_known_subscription() and not await _subscription_exists(session, subscription_id):
+        client_state = item.get("clientState")
+        await _validate_client_state(
+            session,
+            subscription_id=subscription_id,
+            received_state=client_state,
+            require_known_subscription=require_known,
+        )
+        if require_known and not await _subscription_exists(session, subscription_id):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subscription Graph inconnue.")
         existing = await session.scalar(
             select(GraphNotificationRecord.id).where(
@@ -203,6 +210,36 @@ async def save_graph_notifications(session: AsyncSession, payload: dict[str, Any
         count += 1
     await session.commit()
     return count
+
+
+async def _validate_client_state(
+    session: AsyncSession,
+    *,
+    subscription_id: str,
+    received_state: Any,
+    require_known_subscription: bool,
+) -> None:
+    # Microsoft Graph authenticates webhook deliveries via the per-subscription
+    # clientState shared secret. Accept either the value saved at subscription
+    # time OR the current global default — this allows rotating the global
+    # without invalidating already-registered subscriptions, and vice versa.
+    expected_states: set[str] = set()
+    if subscription_id:
+        record_state = await session.scalar(
+            select(GraphSubscriptionRecord.client_state).where(GraphSubscriptionRecord.subscription_id == subscription_id)
+        )
+        if record_state:
+            expected_states.add(record_state)
+    if GRAPH_WEBHOOK_CLIENT_STATE:
+        expected_states.add(GRAPH_WEBHOOK_CLIENT_STATE)
+    if not expected_states:
+        # No expected value anywhere. Require the subscription to exist in prod
+        # so unauthenticated webhook deliveries cannot persist anything.
+        if require_known_subscription:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="clientState Graph absent.")
+        return
+    if not isinstance(received_state, str) or received_state not in expected_states:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="clientState Graph invalide.")
 
 
 async def _requires_known_subscription() -> bool:
