@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -140,9 +141,13 @@ class HistoryStore:
     def __init__(self, history_jsonl_file: Path):
         self.history_jsonl_file = history_jsonl_file
         self.history_jsonl_file.parent.mkdir(parents=True, exist_ok=True)
-        # Cross-process lock so append() and prune() cannot interleave between
-        # the CLI scheduler and a Celery worker writing to the same file.
-        self._lock = ProcessLock(history_jsonl_file.with_name(history_jsonl_file.name + ".lock"), stale_seconds=60)
+        # Two-level locking: threading.Lock for intra-process contention
+        # (threaded Celery workers, CLI loop), and ProcessLock for
+        # cross-process serialization (CLI scheduler + Celery beat writing
+        # to the same .jsonl). ProcessLock alone is not thread-safe because
+        # its single _fd field cannot describe N concurrent holders.
+        self._thread_lock = threading.Lock()
+        self._process_lock = ProcessLock(history_jsonl_file.with_name(history_jsonl_file.name + ".lock"), stale_seconds=60)
 
     def append(
         self,
@@ -173,24 +178,25 @@ class HistoryStore:
 
     @contextmanager
     def _write_lock(self):
-        # Best-effort serialization. Short spin loop is acceptable here — writes
-        # are cheap and conflicts only happen when CLI + Celery race on the
-        # exact same line. Falls back to unlocked write after a few retries so
-        # that a stale lock (which would already be cleared by stale_seconds)
-        # never wedges scheduling.
-        attempts = 0
-        while True:
-            if self._lock.acquire():
-                try:
-                    yield
-                finally:
-                    self._lock.release()
-                return
-            attempts += 1
-            if attempts >= 10:
+        # Intra-process first (threading.Lock), then cross-process
+        # (ProcessLock). Short spin loop on the process lock is acceptable —
+        # writes are cheap and conflicts are rare. Falls back to thread-only
+        # serialization after a few retries so a stale or contended process
+        # lock can never wedge scheduling.
+        with self._thread_lock:
+            attempts = 0
+            acquired = False
+            while attempts < 10:
+                if self._process_lock.acquire():
+                    acquired = True
+                    break
+                attempts += 1
+                time.sleep(0.05)
+            try:
                 yield
-                return
-            time.sleep(0.05)
+            finally:
+                if acquired:
+                    self._process_lock.release()
 
     def read(
         self,
