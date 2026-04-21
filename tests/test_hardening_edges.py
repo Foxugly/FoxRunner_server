@@ -18,10 +18,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
-from fastapi.testclient import TestClient
+from starlette.applications import Starlette
+from starlette.responses import PlainTextResponse
+from starlette.routing import Route
+from starlette.testclient import TestClient
 
 from api.graph import save_graph_notifications, save_graph_subscription
-from api.main import create_app
+from api.payload_limit import install_payload_limit
 from api.permissions import require_scenario_owner, scenario_role
 from api.rate_limit import _allow_redis
 from scenarios.loader import ScenarioStep
@@ -146,33 +149,44 @@ class RateLimitRedisTests(unittest.TestCase):
 # --- Payload limit (chunked body) ----------------------------------------
 
 
+def _build_echo_app() -> Starlette:
+    # Minimal Starlette app that exercises PayloadLimitMiddleware in
+    # isolation — no DB lifespan, no auth, no SQLite dependency. Any POST
+    # that reaches the endpoint echoes "ok"; if the middleware rejects
+    # early we see 413 instead.
+    async def echo(request):
+        await request.body()
+        return PlainTextResponse("ok")
+
+    app = Starlette(routes=[Route("/echo", echo, methods=["POST"])])
+    install_payload_limit(app)
+    return app
+
+
 class PayloadLimitChunkedTests(unittest.TestCase):
-    def test_chunked_request_over_limit_rejected(self):
-        # Create the FastAPI app with a tiny body limit and hit a permissive
-        # route with an oversized chunked body.
-        app = create_app()
+    def test_content_length_over_limit_rejected(self):
         body = b"x" * 5000
-        with patch.dict(os.environ, {"API_MAX_BODY_BYTES": "1024", "APP_ENV": "test"}, clear=False):
-            with TestClient(app) as client:
-                # Content-Length path.
-                response = client.post("/api/v1/auth/jwt/login", content=body, headers={"Content-Type": "application/x-www-form-urlencoded"})
+        with patch.dict(os.environ, {"API_MAX_BODY_BYTES": "1024"}, clear=False):
+            with TestClient(_build_echo_app()) as client:
+                response = client.post("/echo", content=body)
                 self.assertEqual(response.status_code, 413)
 
     def test_chunked_without_content_length_rejected(self):
-        app = create_app()
-
         def streamed():
             yield b"x" * 600
             yield b"x" * 600
 
-        with patch.dict(os.environ, {"API_MAX_BODY_BYTES": "1024", "APP_ENV": "test"}, clear=False):
-            with TestClient(app) as client:
-                response = client.post(
-                    "/api/v1/auth/jwt/login",
-                    content=streamed(),
-                    headers={"Content-Type": "application/x-www-form-urlencoded", "Transfer-Encoding": "chunked"},
-                )
+        with patch.dict(os.environ, {"API_MAX_BODY_BYTES": "1024"}, clear=False):
+            with TestClient(_build_echo_app()) as client:
+                response = client.post("/echo", content=streamed(), headers={"Transfer-Encoding": "chunked"})
                 self.assertEqual(response.status_code, 413)
+
+    def test_small_body_passes_through(self):
+        with patch.dict(os.environ, {"API_MAX_BODY_BYTES": "1024"}, clear=False):
+            with TestClient(_build_echo_app()) as client:
+                response = client.post("/echo", content=b"small")
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.text, "ok")
 
 
 # --- DST fold ------------------------------------------------------------
