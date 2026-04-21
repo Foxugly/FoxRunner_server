@@ -1,6 +1,8 @@
-# Development and CI tooling. Not required at runtime — not installed in the
-# production Docker image.
+# Development and CI tooling input list. Not required at runtime — not
+# installed in the production Docker image. Regenerate the pinned
+# requirements-dev.lock with `make relock` after editing this file.
 -r requirements.txt
 ruff
 coverage
 pre-commit
+pip-tools

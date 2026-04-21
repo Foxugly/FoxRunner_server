@@ -3,10 +3,15 @@ ALEMBIC := ./.venv/Scripts/alembic.exe
 UVICORN := ./.venv/Scripts/uvicorn.exe
 CELERY := ./.venv/Scripts/celery.exe
 
-.PHONY: install lint format test coverage migrate migration migrate-test run-api run-worker run-beat reset-local docker-up docker-down backup-sqlite restore-sqlite openapi openapi-check docs-check audit smoke ci clean
+.PHONY: install relock lint format test coverage migrate migration migrate-test run-api run-worker run-beat reset-local docker-up docker-down backup-sqlite restore-sqlite openapi openapi-check docs-check audit smoke ci clean
 
 install:
-	$(PYTHON) -m pip install -r requirements-dev.txt
+	$(PYTHON) -m pip install -r requirements-dev.lock
+
+relock:
+	$(PYTHON) -m pip install pip-tools
+	$(PYTHON) -m piptools compile --quiet --strip-extras --output-file=requirements.lock requirements.txt
+	$(PYTHON) -m piptools compile --quiet --strip-extras --output-file=requirements-dev.lock requirements-dev.txt
 
 test:
 	$(PYTHON) -m unittest

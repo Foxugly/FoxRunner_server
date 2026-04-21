@@ -1,11 +1,10 @@
-# Runtime dependencies. Keep this list minimal; development-only tools (ruff,
-# coverage, pre-commit) belong in requirements-dev.txt so they don't end up in
-# the production Docker image.
+# Runtime dependency inputs. Keep this list minimal; development-only tools
+# (ruff, coverage, pre-commit) belong in requirements-dev.txt so they don't
+# end up in the production Docker image.
 #
-# Versions are intentionally unpinned here to keep the initial setup simple.
-# Before a production rollout, regenerate a pinned lockfile with:
-#   pip-compile --generate-hashes --output-file=requirements.lock requirements.txt
-# and install from the lockfile in CI / Dockerfile.
+# This file is the input list — the pinned versions live in
+# requirements.lock and that is what CI and the Dockerfile install.
+# Regenerate with `make relock` after editing this file.
 requests
 selenium
 truststore

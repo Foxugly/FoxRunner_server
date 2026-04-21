@@ -20,3 +20,9 @@ Migration filenames use `YYYYMMDD_NNNN_short_description.py`. Each migration sho
 ## API Contract
 
 Public routes live under `/api/v1`. Legacy unprefixed routes exist only for compatibility.
+
+## Dependencies
+
+- `requirements.txt` / `requirements-dev.txt` are the *input* lists (unpinned).
+- `requirements.lock` / `requirements-dev.lock` are the compiled, pinned lockfiles. CI and the production Docker image install from the lockfiles so builds are reproducible.
+- Re-lock after changing an input list: `make relock` (requires `pip-tools`). Run this with a Python **3.12** interpreter ideally; the resolver uses the current interpreter version and a newer Python may pin wheels that are unavailable at the CI/Docker target. Commit both `.lock` files together with their `.txt` input.
