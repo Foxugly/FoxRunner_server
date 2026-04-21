@@ -27,24 +27,27 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(result, {"enabled": False, "renewed": 0})
 
     def test_renew_graph_subscriptions_updates_expiring_records(self):
-        with patch("api.tasks.is_graph_configured", return_value=True), patch("api.tasks.renew_graph_subscription", return_value={"expirationDateTime": "2026-04-23T10:00:00Z"}):
-            with self._patched_task_db() as (_, session_maker):
+        with (
+            patch("api.tasks.is_graph_configured", return_value=True),
+            patch("api.tasks.renew_graph_subscription", return_value={"expirationDateTime": "2026-04-23T10:00:00Z"}),
+            self._patched_task_db() as (_, session_maker),
+        ):
 
-                async def seed():
-                    async with session_maker() as session:
-                        session.add(
-                            GraphSubscriptionRecord(
-                                subscription_id="sub1",
-                                resource="users/a/messages",
-                                change_type="created",
-                                notification_url="https://example.com/webhook",
-                                expiration_datetime=utc_now_naive() + timedelta(hours=1),
-                            )
+            async def seed():
+                async with session_maker() as session:
+                    session.add(
+                        GraphSubscriptionRecord(
+                            subscription_id="sub1",
+                            resource="users/a/messages",
+                            change_type="created",
+                            notification_url="https://example.com/webhook",
+                            expiration_datetime=utc_now_naive() + timedelta(hours=1),
                         )
-                        await session.commit()
+                    )
+                    await session.commit()
 
-                asyncio.run(seed())
-                result = asyncio.run(_renew_graph_subscriptions_task())
+            asyncio.run(seed())
+            result = asyncio.run(_renew_graph_subscriptions_task())
 
         self.assertEqual(result["renewed"], 1)
         self.assertEqual(result["errors"], [])
@@ -71,9 +74,8 @@ class TaskTests(unittest.TestCase):
                     await session.commit()
 
             asyncio.run(seed())
-            with patch("api.tasks.load_config", side_effect=RuntimeError("boom")):
-                with self.assertRaises(RuntimeError):
-                    asyncio.run(_run_scenario_job("job1", "alice_scenario", True))
+            with patch("api.tasks.load_config", side_effect=RuntimeError("boom")), self.assertRaises(RuntimeError):
+                asyncio.run(_run_scenario_job("job1", "alice_scenario", True))
 
             async def read_status():
                 async with session_maker() as session:

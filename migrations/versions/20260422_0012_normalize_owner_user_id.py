@@ -72,13 +72,13 @@ def downgrade() -> None:
 def _uuid_as_text(value: object, dialect: str) -> str:
     if value is None:
         return ""
-    if hasattr(value, "hex") and not isinstance(value, (bytes, bytearray)):
+    if hasattr(value, "hex") and not isinstance(value, bytes | bytearray):
         return str(value)
-    if isinstance(value, (bytes, bytearray)):
+    if isinstance(value, bytes | bytearray):
         # fastapi_users on SQLite stores UUIDs as CHAR(32) hex; some backends
         # may surface them as bytes. Normalize to the canonical 8-4-4-4-12
         # form so comparisons against str(user.id) line up.
-        hex_value = value.hex() if isinstance(value, (bytes, bytearray)) else str(value)
+        hex_value = value.hex() if isinstance(value, bytes | bytearray) else str(value)
         if len(hex_value) == 32:
             return f"{hex_value[0:8]}-{hex_value[8:12]}-{hex_value[12:16]}-{hex_value[16:20]}-{hex_value[20:32]}"
         return hex_value

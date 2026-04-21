@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import uuid
@@ -25,10 +26,8 @@ from scenarios.loader import validate_scenarios_document, validate_slots_documen
 
 async def update_user(session: AsyncSession, *, target_user_id: str, payload: AdminUserUpdatePayload, current_user: User) -> dict[str, object]:
     predicates = [User.email == target_user_id]
-    try:
+    with contextlib.suppress(ValueError):
         predicates.append(User.id == uuid.UUID(target_user_id))
-    except ValueError:
-        pass
     user = await session.scalar(select(User).where(or_(*predicates)))
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Utilisateur introuvable.")

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import os
 import tempfile
+import time
 import unittest
 from datetime import datetime
 from pathlib import Path
@@ -79,9 +80,11 @@ class GraphClientStateValidationTests(unittest.TestCase):
                             {"value": [{"subscriptionId": "sub1", "changeType": "created", "resource": "users/a/messages/1", "clientState": "wrong"}]},
                         )
 
-            with patch.dict(os.environ, {"GRAPH_WEBHOOK_REQUIRE_SUBSCRIPTION": "false", "APP_ENV": "development"}, clear=False):
-                with self.assertRaises(HTTPException) as ctx:
-                    asyncio.run(run())
+            with (
+                patch.dict(os.environ, {"GRAPH_WEBHOOK_REQUIRE_SUBSCRIPTION": "false", "APP_ENV": "development"}, clear=False),
+                self.assertRaises(HTTPException) as ctx,
+            ):
+                asyncio.run(run())
             self.assertEqual(ctx.exception.status_code, 403)
 
     def test_production_requires_global_state(self):
@@ -92,9 +95,8 @@ class GraphClientStateValidationTests(unittest.TestCase):
                     with patch.multiple("api.graph", GRAPH_WEBHOOK_CLIENT_STATE=""):
                         await save_graph_notifications(session, {"value": [{"subscriptionId": "sub1", "clientState": "any"}]})
 
-            with patch.dict(os.environ, {"GRAPH_WEBHOOK_REQUIRE_SUBSCRIPTION": "false", "APP_ENV": "production"}, clear=False):
-                with self.assertRaises(HTTPException) as ctx:
-                    asyncio.run(run())
+            with patch.dict(os.environ, {"GRAPH_WEBHOOK_REQUIRE_SUBSCRIPTION": "false", "APP_ENV": "production"}, clear=False), self.assertRaises(HTTPException) as ctx:
+                asyncio.run(run())
             self.assertEqual(ctx.exception.status_code, 503)
 
 
@@ -166,27 +168,24 @@ def _build_echo_app() -> Starlette:
 class PayloadLimitChunkedTests(unittest.TestCase):
     def test_content_length_over_limit_rejected(self):
         body = b"x" * 5000
-        with patch.dict(os.environ, {"API_MAX_BODY_BYTES": "1024"}, clear=False):
-            with TestClient(_build_echo_app()) as client:
-                response = client.post("/echo", content=body)
-                self.assertEqual(response.status_code, 413)
+        with patch.dict(os.environ, {"API_MAX_BODY_BYTES": "1024"}, clear=False), TestClient(_build_echo_app()) as client:
+            response = client.post("/echo", content=body)
+            self.assertEqual(response.status_code, 413)
 
     def test_chunked_without_content_length_rejected(self):
         def streamed():
             yield b"x" * 600
             yield b"x" * 600
 
-        with patch.dict(os.environ, {"API_MAX_BODY_BYTES": "1024"}, clear=False):
-            with TestClient(_build_echo_app()) as client:
-                response = client.post("/echo", content=streamed(), headers={"Transfer-Encoding": "chunked"})
-                self.assertEqual(response.status_code, 413)
+        with patch.dict(os.environ, {"API_MAX_BODY_BYTES": "1024"}, clear=False), TestClient(_build_echo_app()) as client:
+            response = client.post("/echo", content=streamed(), headers={"Transfer-Encoding": "chunked"})
+            self.assertEqual(response.status_code, 413)
 
     def test_small_body_passes_through(self):
-        with patch.dict(os.environ, {"API_MAX_BODY_BYTES": "1024"}, clear=False):
-            with TestClient(_build_echo_app()) as client:
-                response = client.post("/echo", content=b"small")
-                self.assertEqual(response.status_code, 200)
-                self.assertEqual(response.text, "ok")
+        with patch.dict(os.environ, {"API_MAX_BODY_BYTES": "1024"}, clear=False), TestClient(_build_echo_app()) as client:
+            response = client.post("/echo", content=b"small")
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.text, "ok")
 
 
 # --- DST fold ------------------------------------------------------------
@@ -396,6 +395,26 @@ def _atomic(op_type: str) -> ScenarioStep:
         continue_on_error=False,
         when=None,
     )
+
+
+# --- _run_with_timeout --------------------------------------------------
+
+
+class RunWithTimeoutTests(unittest.TestCase):
+    def test_timeout_raises_before_body_finishes(self):
+        from scenarios.runner import _run_with_timeout
+
+        def slow():
+            time.sleep(1.0)
+            return "done"
+
+        with self.assertRaises(TimeoutError):
+            _run_with_timeout(slow, timeout_seconds=0.05)
+
+    def test_completed_within_budget_returns_result(self):
+        from scenarios.runner import _run_with_timeout
+
+        self.assertEqual(_run_with_timeout(lambda: "ok", timeout_seconds=5), "ok")
 
 
 if __name__ == "__main__":

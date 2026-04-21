@@ -7,10 +7,10 @@ import re
 import socket
 import subprocess
 from dataclasses import asdict, dataclass
-from enum import Enum
+from enum import StrEnum
 
 
-class NetworkLocation(str, Enum):
+class NetworkLocation(StrEnum):
     OFFICE = "office"
     OFFICE_VIA_VPN = "office_via_vpn"
     OTHER = "other"
@@ -189,10 +189,9 @@ class NetworkDetector:
             notes.append("VPN détecté avec indice d'accès au réseau d'entreprise.")
             return NetworkLocation.OFFICE_VIA_VPN
 
-        if vpn_detected and self.config.allow_private_non_home_heuristic_for_vpn:
-            if has_non_home_private_ip or has_non_home_gateway:
-                notes.append("VPN détecté avec IP ou passerelle privée non domestique.")
-                return NetworkLocation.OFFICE_VIA_VPN
+        if vpn_detected and self.config.allow_private_non_home_heuristic_for_vpn and (has_non_home_private_ip or has_non_home_gateway):
+            notes.append("VPN détecté avec IP ou passerelle privée non domestique.")
+            return NetworkLocation.OFFICE_VIA_VPN
 
         notes.append("Aucun indice suffisant pour classer en réseau bureau.")
         return NetworkLocation.OTHER

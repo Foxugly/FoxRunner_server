@@ -46,34 +46,38 @@ class CoverageEdgeTests(unittest.TestCase):
         self.assertFalse(disabled)
 
     def test_mail_uses_graph_or_smtp_or_noops_without_host(self):
-        with patch.dict(os.environ, {"GRAPH_MAIL_ENABLED": "true", "APP_PASSWORD_RESET_URL": "https://app/reset"}, clear=False):
-            with patch("api.mail.send_graph_mail") as send_graph:
-                send_password_reset_email("alice@example.com", "token")
-                send_graph.assert_called_once()
+        with (
+            patch.dict(os.environ, {"GRAPH_MAIL_ENABLED": "true", "APP_PASSWORD_RESET_URL": "https://app/reset"}, clear=False),
+            patch("api.mail.send_graph_mail") as send_graph,
+        ):
+            send_password_reset_email("alice@example.com", "token")
+            send_graph.assert_called_once()
 
         with patch.dict(os.environ, {"GRAPH_MAIL_ENABLED": "false", "SMTP_HOST": ""}, clear=False):
             send_password_reset_email("alice@example.com", "token")
 
         smtp = MagicMock()
         smtp.__enter__.return_value = smtp
-        with patch.dict(
-            os.environ,
-            {
-                "GRAPH_MAIL_ENABLED": "false",
-                "SMTP_HOST": "smtp.example.com",
-                "SMTP_PORT": "2525",
-                "SMTP_USERNAME": "user",
-                "SMTP_PASSWORD": "pass",
-                "SMTP_FROM": "from@example.com",
-                "SMTP_STARTTLS": "true",
-            },
-            clear=False,
+        with (
+            patch.dict(
+                os.environ,
+                {
+                    "GRAPH_MAIL_ENABLED": "false",
+                    "SMTP_HOST": "smtp.example.com",
+                    "SMTP_PORT": "2525",
+                    "SMTP_USERNAME": "user",
+                    "SMTP_PASSWORD": "pass",
+                    "SMTP_FROM": "from@example.com",
+                    "SMTP_STARTTLS": "true",
+                },
+                clear=False,
+            ),
+            patch("api.mail.smtplib.SMTP", return_value=smtp),
         ):
-            with patch("api.mail.smtplib.SMTP", return_value=smtp):
-                send_password_reset_email("alice@example.com", "token")
-                smtp.starttls.assert_called_once()
-                smtp.login.assert_called_once_with("user", "pass")
-                smtp.send_message.assert_called_once()
+            send_password_reset_email("alice@example.com", "token")
+            smtp.starttls.assert_called_once()
+            smtp.login.assert_called_once_with("user", "pass")
+            smtp.send_message.assert_called_once()
 
     def test_logging_formatter_and_configuration(self):
         record = logging.LogRecord("smiley.api", logging.INFO, __file__, 1, "hello", (), None)
@@ -126,9 +130,9 @@ class CoverageEdgeTests(unittest.TestCase):
             patch("api.health._check_redis", return_value="ok"),
             patch("api.health._check_celery", return_value="no_workers"),
             patch("api.health.is_graph_configured", return_value=False),
+            patch.dict(os.environ, {"API_REQUIRE_CELERY_WORKER": "true"}, clear=False),
         ):
-            with patch.dict(os.environ, {"API_REQUIRE_CELERY_WORKER": "true"}, clear=False):
-                result = asyncio.run(readiness(Session()))
+            result = asyncio.run(readiness(Session()))
         self.assertEqual(result["status"], "degraded")
 
     def test_artifact_helpers(self):
@@ -187,9 +191,8 @@ class CoverageEdgeTests(unittest.TestCase):
             handle_http_request(context, {"url": "https://example.com", "method": "post", "expected_status": 204})
             request.assert_called_once()
         response_bad = SimpleNamespace(status_code=500)
-        with patch("operations.http_ops.requests.request", return_value=response_bad):
-            with self.assertRaises(RuntimeError):
-                handle_http_request(context, {"url": "https://example.com", "expected_status": 200})
+        with patch("operations.http_ops.requests.request", return_value=response_bad), self.assertRaises(RuntimeError):
+            handle_http_request(context, {"url": "https://example.com", "expected_status": 200})
 
 
 if __name__ == "__main__":

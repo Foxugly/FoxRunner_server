@@ -181,19 +181,18 @@ class TaskRunnerTests(unittest.TestCase):
             def page_source(self):
                 return "<html></html>"
 
-        with patch("scenarios.runner.create_driver", return_value=FailingDriver()):
-            with patch("scenarios.runner.time.sleep") as sleep_mock:
-                result = run_task(
-                    TaskConfig(),
-                    Logger(debug_enabled=False),
-                    scenario=scenario,
-                    scenario_data=scenario_data,
-                    dry_run=False,
-                    notifier=None,
-                    network_check=lambda: True,
-                    network_check_by_key=lambda key: True,
-                    initial_context={"execution_id": "exec-test"},
-                )
+        with patch("scenarios.runner.create_driver", return_value=FailingDriver()), patch("scenarios.runner.time.sleep") as sleep_mock:
+            result = run_task(
+                TaskConfig(),
+                Logger(debug_enabled=False),
+                scenario=scenario,
+                scenario_data=scenario_data,
+                dry_run=False,
+                notifier=None,
+                network_check=lambda: True,
+                network_check_by_key=lambda key: True,
+                initial_context={"execution_id": "exec-test"},
+            )
         self.assertFalse(result.success)
         sleep_mock.assert_any_call(0.5)
 
@@ -230,19 +229,18 @@ class TaskRunnerTests(unittest.TestCase):
             def page_source(self):
                 return "<html></html>"
 
-        with patch("scenarios.runner.create_driver", return_value=FailingDriver()):
-            with patch("scenarios.runner.time.sleep") as sleep_mock:
-                result = run_task(
-                    TaskConfig(),
-                    Logger(debug_enabled=False),
-                    scenario=scenario,
-                    scenario_data=scenario_data,
-                    dry_run=False,
-                    notifier=None,
-                    network_check=lambda: True,
-                    network_check_by_key=lambda key: True,
-                    initial_context={"execution_id": "exec-test"},
-                )
+        with patch("scenarios.runner.create_driver", return_value=FailingDriver()), patch("scenarios.runner.time.sleep") as sleep_mock:
+            result = run_task(
+                TaskConfig(),
+                Logger(debug_enabled=False),
+                scenario=scenario,
+                scenario_data=scenario_data,
+                dry_run=False,
+                notifier=None,
+                network_check=lambda: True,
+                network_check_by_key=lambda key: True,
+                initial_context={"execution_id": "exec-test"},
+            )
         self.assertFalse(result.success)
         sleep_mock.assert_any_call(0.5)
         sleep_mock.assert_any_call(1.0)

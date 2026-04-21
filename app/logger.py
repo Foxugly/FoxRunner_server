@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 try:
@@ -51,7 +51,7 @@ class Logger:
             }
 
     def _log(self, level: str, message: str):
-        now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+        now = datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
         line = f"[{now}] [{level}] {message}"
         payload = {"timestamp": now, "level": level, "message": message}
         color = self.colors.get(level, "")

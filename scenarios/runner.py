@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import concurrent.futures
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
-from typing import Callable
 
 from selenium import webdriver
 
@@ -245,8 +246,12 @@ def _execute_scenario_step(
             if not dry_run and _requires_driver(step.type) and driver is None:
                 driver = create_driver(config)
             if step.timeout_seconds is not None:
-                updated_driver = _run_with_timeout(
-                    lambda: _execute_step(
+                # functools.partial binds `driver` eagerly; a lambda would
+                # capture the loop variable lexically (B023) and pick up a
+                # later reassignment if the retry loop iterates.
+                driver = _run_with_timeout(
+                    partial(
+                        _execute_step,
                         operation_registry,
                         driver,
                         step.type,
@@ -263,7 +268,6 @@ def _execute_scenario_step(
                     ),
                     step.timeout_seconds,
                 )
-                driver = updated_driver
             else:
                 driver = _execute_step(
                     operation_registry,

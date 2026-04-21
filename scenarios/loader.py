@@ -429,9 +429,8 @@ def _validate_step_payload_document(step_type: str, step: dict[str, Any], filena
         _require_keys(step, ("key",), f"{filename} scenario '{scenario_id}' step 'set_context'")
     if step_type == "format_context":
         _require_keys(step, ("key", "template"), f"{filename} scenario '{scenario_id}' step 'format_context'")
-    if step_type == "repeat":
-        if int(step["times"]) <= 0:
-            raise ValueError(f"{filename}: 'repeat.times' doit etre > 0.")
+    if step_type == "repeat" and int(step["times"]) <= 0:
+        raise ValueError(f"{filename}: 'repeat.times' doit etre > 0.")
     if step_type == "parallel":
         unsupported = [
             child["type"]

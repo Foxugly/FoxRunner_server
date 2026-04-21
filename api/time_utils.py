@@ -1,20 +1,20 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 
 def utc_now_naive() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def ensure_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def db_utc(value: datetime) -> datetime:
@@ -35,7 +35,7 @@ def parse_utc(value: str) -> datetime:
 def require_utc(value: datetime, *, field_name: str = "datetime") -> datetime:
     if value.tzinfo is None:
         raise ValueError(f"{field_name} doit inclure une timezone UTC explicite.")
-    normalized = value.astimezone(timezone.utc)
+    normalized = value.astimezone(UTC)
     if normalized.utcoffset() != value.utcoffset():
         raise ValueError(f"{field_name} doit etre en UTC.")
     return normalized

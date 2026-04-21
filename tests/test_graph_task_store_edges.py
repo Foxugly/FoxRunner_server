@@ -6,7 +6,7 @@ import os
 import tempfile
 import time
 import unittest
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -97,9 +97,8 @@ class GraphTaskStoreEdgeTests(unittest.TestCase):
             self.assertEqual(created["id"], "sub1")
             self.assertEqual(asyncio.run(delete_graph_subscription("sub1")), None)
 
-        with patch.multiple("api.graph", GRAPH_MAIL_SENDER=""):
-            with self.assertRaises(RuntimeError):
-                send_graph_mail(to="to@example.com", subject="Subject", body="Body")
+        with patch.multiple("api.graph", GRAPH_MAIL_SENDER=""), self.assertRaises(RuntimeError):
+            send_graph_mail(to="to@example.com", subject="Subject", body="Body")
 
     def test_save_graph_subscription_and_notifications(self):
         with temp_service_db() as (_, _, session_maker, _):
@@ -156,17 +155,19 @@ class GraphTaskStoreEdgeTests(unittest.TestCase):
 
             with self.assertRaises(HTTPException):
                 asyncio.run(run_invalid_payload())
-            with patch.multiple("api.graph", GRAPH_WEBHOOK_CLIENT_STATE="expected"):
-                with self.assertRaises(HTTPException):
-                    asyncio.run(run_bad_state())
+            with patch.multiple("api.graph", GRAPH_WEBHOOK_CLIENT_STATE="expected"), self.assertRaises(HTTPException):
+                asyncio.run(run_bad_state())
 
             async def unknown():
                 async with session_maker() as session:
                     await save_graph_notifications(session, {"value": [{"subscriptionId": "missing", "clientState": ""}]})
 
-            with patch.multiple("api.graph", GRAPH_WEBHOOK_CLIENT_STATE=""), patch.dict(os.environ, {"GRAPH_WEBHOOK_REQUIRE_SUBSCRIPTION": "true"}, clear=False):
-                with self.assertRaises(HTTPException):
-                    asyncio.run(unknown())
+            with (
+                patch.multiple("api.graph", GRAPH_WEBHOOK_CLIENT_STATE=""),
+                patch.dict(os.environ, {"GRAPH_WEBHOOK_REQUIRE_SUBSCRIPTION": "true"}, clear=False),
+                self.assertRaises(HTTPException),
+            ):
+                asyncio.run(unknown())
 
     def test_graph_router_endpoints_delegate_and_validate_tokens(self):
         async def run():
@@ -322,7 +323,7 @@ class GraphTaskStoreEdgeTests(unittest.TestCase):
                                 resource="users/a/messages",
                                 change_type="created",
                                 notification_url="https://example.com/webhook",
-                                expiration_datetime=datetime.now(timezone.utc).replace(tzinfo=None),
+                                expiration_datetime=datetime.now(UTC).replace(tzinfo=None),
                             )
                         )
                         await session.commit()
@@ -367,9 +368,8 @@ class GraphTaskStoreEdgeTests(unittest.TestCase):
             patch("api.tasks.load_config", return_value=SimpleNamespace(runtime=SimpleNamespace(artifacts_dir=Path(".")))),
             patch("api.tasks.prune_artifacts", return_value=3),
         ):
-            with temp_service_db() as (_, _, session_maker, _):
-                with patch.object(__import__("api.tasks").tasks, "async_session_maker", session_maker):
-                    result = asyncio.run(_prune_retention_task())
+            with temp_service_db() as (_, _, session_maker, _), patch.object(__import__("api.tasks").tasks, "async_session_maker", session_maker):
+                result = asyncio.run(_prune_retention_task())
             self.assertEqual(result["removed"]["jobs"], 1)
             self.assertEqual(result["removed"]["artifacts"], 3)
 
@@ -385,8 +385,8 @@ class GraphTaskStoreEdgeTests(unittest.TestCase):
             self.assertFalse(state.has_executed("2099-01-01|slot|00:00-01:00"))
             (base / "executions.json").write_text("{bad", encoding="utf-8")
             self.assertFalse(state.has_executed("x"))
-            state.mark_executed("1999-01-01|old|00:00-01:00", datetime(1999, 1, 1, tzinfo=timezone.utc))
-            state.mark_executed("2099-01-01|new|00:00-01:00", datetime(2099, 1, 1, tzinfo=timezone.utc))
+            state.mark_executed("1999-01-01|old|00:00-01:00", datetime(1999, 1, 1, tzinfo=UTC))
+            state.mark_executed("2099-01-01|new|00:00-01:00", datetime(2099, 1, 1, tzinfo=UTC))
             self.assertTrue(state.has_executed("2099-01-01|new|00:00-01:00"))
 
             next_store = NextExecutionStore(base / "next.json")
@@ -405,7 +405,7 @@ class GraphTaskStoreEdgeTests(unittest.TestCase):
                 history.prune(older_than_days=-1)
             self.assertEqual(history.prune(older_than_days=1), 0)
             self.assertEqual(_isoformat(datetime(2026, 1, 1)), "2026-01-01T00:00:00Z")
-            self.assertEqual(_parse_datetime("2026-01-01T00:00:00").tzinfo, timezone.utc)
+            self.assertEqual(_parse_datetime("2026-01-01T00:00:00").tzinfo, UTC)
 
     def test_process_lock_paths(self):
         with tempfile.TemporaryDirectory() as tmp:

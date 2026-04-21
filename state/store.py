@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import threading
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -52,7 +53,7 @@ class ExecutionStateStore:
         temp_file.replace(self.history_file)
 
     def _prune_old_entries(self, executed_slots: dict) -> None:
-        threshold = datetime.now(timezone.utc).date().isoformat()
+        threshold = datetime.now(UTC).date().isoformat()
         stale_keys = [key for key in executed_slots if key.split("|", 1)[0] < threshold]
         for key in stale_keys:
             executed_slots.pop(key, None)
@@ -94,10 +95,8 @@ class NextExecutionStore:
         temp_file.replace(self.next_execution_file)
 
     def clear(self) -> None:
-        try:
+        with contextlib.suppress(OSError):
             self.next_execution_file.unlink(missing_ok=True)
-        except OSError:
-            pass
 
 
 class LastRunStore:
@@ -172,9 +171,8 @@ class HistoryStore:
             "message": message,
             "updated_at": _utc_now_iso(),
         }
-        with self._write_lock():
-            with self.history_jsonl_file.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        with self._write_lock(), self.history_jsonl_file.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
     @contextmanager
     def _write_lock(self):
@@ -275,10 +273,8 @@ class ProcessLock:
             return
         os.close(self._fd)
         self._fd = None
-        try:
+        with contextlib.suppress(OSError):
             self.lock_file.unlink(missing_ok=True)
-        except OSError:
-            pass
 
     def _recover_stale_lock(self) -> bool:
         metadata = self._read_metadata()
@@ -342,17 +338,17 @@ class ProcessLock:
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _isoformat(value: datetime) -> str:
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _parse_datetime(value: str) -> datetime:
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
+        return parsed.replace(tzinfo=UTC)
     return parsed

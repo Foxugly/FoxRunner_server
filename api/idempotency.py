@@ -63,7 +63,7 @@ async def store_idempotent_response(
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Idempotency-Key reutilisee avec un payload different.",
-            )
+            ) from None
 
 
 def _fingerprint(payload: Any) -> str:

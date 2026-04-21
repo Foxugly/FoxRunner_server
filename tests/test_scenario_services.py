@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import unittest
 
+from fastapi import HTTPException
+
 from api.models import SlotRecord
 from api.schemas import ScenarioPayload, ScenarioUpdatePayload
 from api.services.scenarios import (
@@ -60,7 +62,7 @@ class ScenarioServiceTests(unittest.TestCase):
                     await session.commit()
                     await delete_owned_scenario(session, scenario_id="bob_scenario", config=service.config, current_user=fake_user("bob"))
 
-            with self.assertRaises(Exception):
+            with self.assertRaises(HTTPException):
                 asyncio.run(run())
 
 
