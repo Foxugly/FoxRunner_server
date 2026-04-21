@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import smtplib
 from email.message import EmailMessage
@@ -16,6 +17,8 @@ except ImportError:
 
 load_dotenv()
 
+logger = logging.getLogger("smiley.api.mail")
+
 
 def send_password_reset_email(email: str, token: str) -> None:
     if os.getenv("GRAPH_MAIL_ENABLED", "true").lower() == "true":
@@ -29,6 +32,7 @@ def send_password_reset_email(email: str, token: str) -> None:
 
     host = os.getenv("SMTP_HOST")
     if not host:
+        logger.error("Password reset email not sent: Graph is disabled and SMTP_HOST is not configured.")
         return
     port = int(os.getenv("SMTP_PORT", "587"))
     username = os.getenv("SMTP_USERNAME")

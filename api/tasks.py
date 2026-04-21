@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from datetime import timedelta
 
@@ -17,6 +18,8 @@ from api.retention import prune_database_records
 from api.time_utils import db_utc, parse_utc, utc_now, utc_now_naive
 from app.config import load_config
 from app.main import build_runtime_services_from_catalog
+
+logger = logging.getLogger("smiley.api.tasks")
 
 
 @celery_app.task(name="api.tasks.run_scenario_job")
@@ -121,6 +124,7 @@ async def _renew_graph_subscriptions_task() -> dict[str, object]:
                 record.raw_payload = redact(raw)
                 renewed += 1
             except Exception as exc:
+                logger.error("Graph subscription renewal failed for %s: %s", record.subscription_id, exc)
                 errors.append({"subscription_id": record.subscription_id, "error": str(exc)})
         await session.commit()
     return {"enabled": True, "configured": True, "renewed": renewed, "errors": errors}
