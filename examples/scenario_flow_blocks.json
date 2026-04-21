@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "data": {
+    "default_pushover": "default",
+    "default_network": "office",
+    "pushovers": {
+      "default": {
+        "token": "...",
+        "user_key": "..."
+      }
+    },
+    "networks": {
+      "office": {
+        "office_ipv4_networks": [],
+        "office_gateway_networks": [],
+        "office_dns_suffixes": [],
+        "vpn_interface_keywords": [],
+        "vpn_process_names": [],
+        "internal_test_hosts": [],
+        "internal_test_ports": [],
+        "tcp_timeout_seconds": 1.0,
+        "home_like_networks": [],
+        "allow_private_non_home_heuristic_for_vpn": true
+      }
+    }
+  },
+  "scenarios": {
+    "flow_blocks": {
+      "steps": [
+        {
+          "type": "set_context",
+          "key": "target",
+          "value": "world"
+        },
+        {
+          "type": "format_context",
+          "key": "message",
+          "template": "Hello {target}"
+        },
+        {
+          "type": "repeat",
+          "times": 2,
+          "steps": [
+            {
+              "type": "parallel",
+              "steps": [
+                {
+                  "type": "notify",
+                  "message": "{message}"
+                },
+                {
+                  "type": "sleep",
+                  "seconds": 1
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "try",
+          "try_steps": [
+            {
+              "type": "require_enterprise_network"
+            }
+          ],
+          "catch_steps": [
+            {
+              "type": "notify",
+              "message": "Network unavailable: {error_message}"
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

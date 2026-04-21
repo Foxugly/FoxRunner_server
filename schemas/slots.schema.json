@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FoxRunner Slots",
+  "type": "object",
+  "required": ["slots"],
+  "additionalProperties": false,
+  "properties": {
+    "slots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "days", "start", "end", "scenario"],
+        "additionalProperties": false,
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "days": {
+            "type": "array",
+            "items": { "type": "integer", "minimum": 0, "maximum": 6 }
+          },
+          "start": { "type": "string", "pattern": "^\\d{2}:\\d{2}$" },
+          "end": { "type": "string", "pattern": "^\\d{2}:\\d{2}$" },
+          "scenario": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

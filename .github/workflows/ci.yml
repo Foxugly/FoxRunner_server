@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      APP_ENV: test
+      API_LOG_HTTP_ENABLED: "false"
+      APP_LOG_CONSOLE_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+      - name: Compile
+        run: python -m compileall api app cli migrations network operations scenarios scheduler scripts state tests
+      - name: Lint
+        run: ruff check .
+      - name: Coverage
+        run: |
+          coverage run -m unittest
+          coverage report --fail-under=84
+      - name: Alembic migration cycle
+        env:
+          AUTH_DATABASE_URL: sqlite+aiosqlite:///.runtime/ci.db
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+      - name: Export OpenAPI
+        run: python scripts/export_openapi.py
+      - name: Check OpenAPI
+        run: python scripts/check_openapi.py
+      - name: Check docs
+        run: python scripts/check_docs.py
+      - name: Docker Compose config
+        run: docker compose config
+      - name: Docker build
+        run: docker build .

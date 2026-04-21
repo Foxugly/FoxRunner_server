@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "data": {
+    "default_pushover": "ops",
+    "default_network": "office",
+    "pushovers": {
+      "ops": {
+        "token": "...",
+        "user_key": "..."
+      }
+    },
+    "networks": {
+      "office": {
+        "office_ipv4_networks": [],
+        "office_gateway_networks": [],
+        "office_dns_suffixes": [],
+        "vpn_interface_keywords": [],
+        "vpn_process_names": [],
+        "internal_test_hosts": [],
+        "internal_test_ports": [],
+        "tcp_timeout_seconds": 1.0,
+        "home_like_networks": [],
+        "allow_private_non_home_heuristic_for_vpn": true
+      }
+    }
+  },
+  "scenarios": {
+    "rest_notify": {
+      "steps": [
+        {
+          "type": "http_request",
+          "method": "GET",
+          "url": "https://example.test/api/health",
+          "expected_status": 200
+        },
+        {
+          "type": "notify",
+          "message": "Healthcheck OK pour {scenario_id}"
+        }
+      ]
+    }
+  }
+}

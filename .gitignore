@@ -1,0 +1,14 @@
+.coverage
+.env
+.env.*
+!.env.example
+!.env.test
+.idea/
+.ruff_cache/
+.runtime/
+.venv/
+__pycache__/
+*.py[cod]
+*.sqlite
+*.db
+*.log

@@ -1,0 +1,11 @@
+{
+  "slots": [
+    {
+      "id": "morning_example",
+      "days": [0, 1, 2, 3, 4],
+      "start": "08:00",
+      "end": "08:15",
+      "scenario": "browser_scenario"
+    }
+  ]
+}

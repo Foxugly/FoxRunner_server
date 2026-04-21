@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FoxRunner Scenarios",
+  "type": "object",
+  "required": ["schema_version", "data", "scenarios"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": { "type": "integer", "minimum": 1 },
+    "data": { "type": "object" },
+    "scenarios": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["steps"],
+        "properties": {
+          "user_id": { "type": "string", "minLength": 1 },
+          "owner_user_id": { "type": "string", "minLength": 1 },
+          "user_ids": {
+            "type": "array",
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "description": { "type": "string" },
+          "before_steps": { "type": "array" },
+          "steps": { "type": "array" },
+          "on_success": { "type": "array" },
+          "on_failure": { "type": "array" },
+          "finally_steps": { "type": "array" }
+        }
+      }
+    }
+  }
+}

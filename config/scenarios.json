@@ -1,0 +1,190 @@
+{
+  "schema_version": 1,
+  "data": {
+    "default_pushover": "default",
+    "default_network": "office",
+    "pushovers": {
+      "default": {
+        "token": "a2crj657a1atapj1v12nm4iwpxd6q9",
+        "user_key": "ujetaf4mnay3kv51aswyh5giuuuf17",
+        "sound": "vibrate",
+        "timeout_seconds": 20
+      },
+      "ops": {
+        "token": "a2crj657a1atapj1v12nm4iwpxd6q9",
+        "user_key": "ujetaf4mnay3kv51aswyh5giuuuf17",
+        "sound": "pushover",
+        "timeout_seconds": 20
+      }
+    },
+    "networks": {
+      "office": {
+        "office_ipv4_networks": [
+          "10.6.34.0/24",
+          "10.0.14.0/24",
+          "10.2.203.0/24"
+        ],
+        "office_gateway_networks": [
+          "10.6.34.0/24",
+          "10.0.14.0/24",
+          "10.2.203.0/24"
+        ],
+        "office_dns_suffixes": [
+          "sm-ms.lan"
+        ],
+        "vpn_interface_keywords": [
+          "vpn",
+          "forti",
+          "fortinet",
+          "forticlient"
+        ],
+        "vpn_process_names": [
+          "FortiClient.exe",
+          "FortiTray.exe",
+          "FortiESNAC.exe"
+        ],
+        "internal_test_hosts": [],
+        "internal_test_ports": [
+          443,
+          80,
+          445
+        ],
+        "tcp_timeout_seconds": 1.0,
+        "home_like_networks": [
+          "192.168.0.0/16",
+          "192.168.1.0/16"
+        ],
+        "allow_private_non_home_heuristic_for_vpn": true
+      },
+      "office_backup": {
+        "office_ipv4_networks": [
+          "10.6.34.0/24",
+          "10.0.14.0/24",
+          "10.2.203.0/24"
+        ],
+        "office_gateway_networks": [
+          "10.6.34.0/24",
+          "10.0.14.0/24",
+          "10.2.203.0/24"
+        ],
+        "office_dns_suffixes": [
+          "sm-ms.lan"
+        ],
+        "vpn_interface_keywords": [
+          "vpn",
+          "forti",
+          "fortinet",
+          "forticlient"
+        ],
+        "vpn_process_names": [
+          "FortiClient.exe",
+          "FortiTray.exe",
+          "FortiESNAC.exe"
+        ],
+        "internal_test_hosts": [],
+        "internal_test_ports": [
+          443,
+          80,
+          445
+        ],
+        "tcp_timeout_seconds": 1.0,
+        "home_like_networks": [
+          "192.168.0.0/16",
+          "192.168.1.0/16"
+        ],
+        "allow_private_non_home_heuristic_for_vpn": true
+      }
+    }
+  },
+  "scenarios": {
+    "solidaris_pointer": {
+      "description": "Pointage Solidaris via Selenium",
+      "before_steps": [
+        {
+          "type": "require_enterprise_network",
+          "ref": {
+            "network": "office"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "type": "group",
+          "steps": [
+            {
+              "type": "open_url",
+              "url": "https://solidaris.get.be/Primetime/webapp/?locale=fr"
+            },
+            {
+              "type": "sleep_random",
+              "min_seconds": 5,
+              "max_seconds": 10
+            },
+            {
+              "type": "click",
+              "by": "id",
+              "locator": "login",
+              "timeout": 30
+            },
+            {
+              "type": "sleep_random",
+              "min_seconds": 5,
+              "max_seconds": 10
+            },
+            {
+              "type": "click",
+              "by": "xpath",
+              "locator": "//button[normalize-space()='Pointer']",
+              "timeout": 30
+            }
+          ]
+        },
+        {
+          "type": "try",
+          "try_steps": [
+            {
+              "type": "sleep",
+              "seconds": 1
+            }
+          ],
+          "catch_steps": [
+            {
+              "type": "notify",
+              "ref": {
+                "pushover": "ops"
+              },
+              "message": "Bloc try en erreur: {error_message}"
+            }
+          ]
+        }
+      ],
+      "on_success": [
+        {
+          "type": "notify",
+          "ref": {
+            "pushover": "default"
+          },
+          "message": "Action executee avec succes."
+        }
+      ],
+      "on_failure": [
+        {
+          "type": "notify",
+          "ref": {
+            "pushover": "ops"
+          },
+          "message": "Echec de la tache a l'etape {current_step}: {error_message}"
+        }
+      ],
+      "finally_steps": [
+        {
+          "type": "notify",
+          "ref": {
+            "pushover": "default"
+          },
+          "message": "Fin du scenario {scenario_id} pour le slot {slot_id}."
+        }
+      ]
+    }
+  }
+}

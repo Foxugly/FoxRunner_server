@@ -1,0 +1,8 @@
+{
+  "id": "00000000-0000-0000-0000-000000000000",
+  "email": "alice@example.com",
+  "is_active": true,
+  "is_superuser": false,
+  "is_verified": true,
+  "timezone_name": "Europe/Brussels"
+}

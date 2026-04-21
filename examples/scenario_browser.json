@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "data": {
+    "default_pushover": "default",
+    "default_network": "office",
+    "pushovers": {
+      "default": {
+        "token": "...",
+        "user_key": "..."
+      }
+    },
+    "networks": {
+      "office": {
+        "office_ipv4_networks": [],
+        "office_gateway_networks": [],
+        "office_dns_suffixes": [],
+        "vpn_interface_keywords": [],
+        "vpn_process_names": [],
+        "internal_test_hosts": [],
+        "internal_test_ports": [],
+        "tcp_timeout_seconds": 1.0,
+        "home_like_networks": [],
+        "allow_private_non_home_heuristic_for_vpn": true
+      }
+    }
+  },
+  "scenarios": {
+    "browser_scenario": {
+      "before_steps": [
+        {
+          "type": "require_enterprise_network",
+          "ref": { "network": "office" }
+        }
+      ],
+      "steps": [
+        {
+          "type": "open_url",
+          "url": "https://example.test"
+        },
+        {
+          "type": "click",
+          "by": "id",
+          "locator": "login",
+          "timeout": 30
+        }
+      ]
+    }
+  }
+}
