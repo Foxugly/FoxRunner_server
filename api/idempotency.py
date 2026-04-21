@@ -58,9 +58,7 @@ async def store_idempotent_response(
         # stored result instead of bubbling up a 500 — consistent with the spec
         # that guarantees identical responses for the same Idempotency-Key.
         await session.rollback()
-        existing = await session.scalar(
-            select(IdempotencyRecord).where(IdempotencyRecord.user_id == user_id, IdempotencyRecord.key == key)
-        )
+        existing = await session.scalar(select(IdempotencyRecord).where(IdempotencyRecord.user_id == user_id, IdempotencyRecord.key == key))
         if existing is not None and existing.request_fingerprint != _fingerprint(payload):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,

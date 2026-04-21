@@ -2,6 +2,9 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.8.4
     hooks:
+      # The `ruff` hook already invokes `ruff check` — passing "check" as an
+      # arg would duplicate it and the trailing "." would be interpreted as a
+      # file, producing E902 "No such file or directory". Leave args empty so
+      # pre-commit just appends the filenames it wants to check.
       - id: ruff
-        args: ["check", "."]
       - id: ruff-format

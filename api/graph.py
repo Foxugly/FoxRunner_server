@@ -225,9 +225,7 @@ async def _validate_client_state(
     # without invalidating already-registered subscriptions, and vice versa.
     expected_states: set[str] = set()
     if subscription_id:
-        record_state = await session.scalar(
-            select(GraphSubscriptionRecord.client_state).where(GraphSubscriptionRecord.subscription_id == subscription_id)
-        )
+        record_state = await session.scalar(select(GraphSubscriptionRecord.client_state).where(GraphSubscriptionRecord.subscription_id == subscription_id))
         if record_state:
             expected_states.add(record_state)
     if GRAPH_WEBHOOK_CLIENT_STATE:

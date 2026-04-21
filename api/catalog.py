@@ -88,9 +88,7 @@ async def list_scenarios_for_user(
     candidates = _owner_candidates(user_id, email)
     shared = select(ScenarioShareRecord.scenario_id).where(ScenarioShareRecord.user_id.in_(candidates))
     result = await session.scalars(
-        select(ScenarioRecord)
-        .where((ScenarioRecord.owner_user_id.in_(candidates)) | (ScenarioRecord.scenario_id.in_(shared)))
-        .order_by(ScenarioRecord.scenario_id)
+        select(ScenarioRecord).where((ScenarioRecord.owner_user_id.in_(candidates)) | (ScenarioRecord.scenario_id.in_(shared))).order_by(ScenarioRecord.scenario_id)
     )
     return list(result)
 

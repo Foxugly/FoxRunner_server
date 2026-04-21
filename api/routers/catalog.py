@@ -142,7 +142,9 @@ async def list_slots_endpoint(
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(current_active_user),
 ) -> dict[str, object]:
-    records, total = await list_accessible_slots(session, str(current_user.email), email=current_user.email, is_superuser=current_user.is_superuser, scenario_id=scenario_id, limit=limit, offset=offset)
+    records, total = await list_accessible_slots(
+        session, str(current_user.email), email=current_user.email, is_superuser=current_user.is_superuser, scenario_id=scenario_id, limit=limit, offset=offset
+    )
     if scenario_id is not None and total == 0 and not current_user.is_superuser:
         await get_scenario_for_user(session, str(current_user.email), scenario_id, email=current_user.email, is_superuser=False)
     return page_response([slot_summary(record) for record in records], total=total, limit=limit, offset=offset)

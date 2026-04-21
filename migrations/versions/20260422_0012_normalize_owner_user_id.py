@@ -36,9 +36,7 @@ def upgrade() -> None:
 
     # Build a mapping from email to UUID. UUIDs are stored as CHAR(32) /
     # native depending on the backend — cast to text to be portable.
-    user_rows = list(
-        bind.execute(text("SELECT id, email FROM user")).mappings()
-    )
+    user_rows = list(bind.execute(text("SELECT id, email FROM user")).mappings())
 
     for row in user_rows:
         user_id_raw = row["id"]
