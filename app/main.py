@@ -95,36 +95,19 @@ def validate_examples(base_config: AppConfig, logger: Logger) -> int:
 
 
 def build_runtime_services(base_config: AppConfig):
-    scenario_data = load_scenario_data(base_config.runtime.scenarios_file)
-    validate_data_defaults(scenario_data)
-    network_config = scenario_data.networks[scenario_data.default_network_key] if scenario_data.default_network_key is not None else base_config.network
-    config = replace(base_config, network=network_config)
-    logger = create_logger(config)
-    notifier = _build_notifier(logger, scenario_data)
-    slots = load_slots(config.runtime.slots_file)
-    scenarios = load_scenarios(config.runtime.scenarios_file)
-    validate_slot_scenarios(slots, scenarios)
-    network_guard = NetworkGuard(config, scenario_data, logger)
-    scheduler_service = SchedulerService(
-        config=config,
-        logger=logger,
-        notifier=notifier,
-        network_guard=network_guard,
-        slots=slots,
-        scenarios=scenarios,
-        scenario_data=scenario_data,
-    )
-    return scheduler_service
+    slots = load_slots(base_config.runtime.slots_file)
+    scenarios = load_scenarios(base_config.runtime.scenarios_file)
+    return build_runtime_services_from_catalog(base_config, slots, scenarios)
 
 
 def build_runtime_services_from_catalog(base_config: AppConfig, slots, scenarios):
     scenario_data = load_scenario_data(base_config.runtime.scenarios_file)
     validate_data_defaults(scenario_data)
+    validate_slot_scenarios(slots, scenarios)
     network_config = scenario_data.networks[scenario_data.default_network_key] if scenario_data.default_network_key is not None else base_config.network
     config = replace(base_config, network=network_config)
     logger = create_logger(config)
     notifier = _build_notifier(logger, scenario_data)
-    validate_slot_scenarios(slots, scenarios)
     network_guard = NetworkGuard(config, scenario_data, logger)
     return SchedulerService(
         config=config,
