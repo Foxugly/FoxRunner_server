@@ -6,11 +6,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.models import ScenarioRecord, ScenarioShareRecord, SlotRecord
 
 
-def accessible_scenarios_query(user_id: str, *, is_superuser: bool = False):
+def _owner_candidates(user_id: str | None, email: str | None) -> tuple[str, ...]:
+    return tuple({value for value in (user_id, email) if value})
+
+
+def accessible_scenarios_query(user_id: str, *, email: str | None = None, is_superuser: bool = False):
     query = select(ScenarioRecord)
     if not is_superuser:
-        shared = select(ScenarioShareRecord.scenario_id).where(ScenarioShareRecord.user_id == user_id)
-        query = query.where(or_(ScenarioRecord.owner_user_id == user_id, ScenarioRecord.scenario_id.in_(shared)))
+        candidates = _owner_candidates(user_id, email)
+        shared = select(ScenarioShareRecord.scenario_id).where(ScenarioShareRecord.user_id.in_(candidates))
+        query = query.where(or_(ScenarioRecord.owner_user_id.in_(candidates), ScenarioRecord.scenario_id.in_(shared)))
     return query
 
 
@@ -18,22 +23,23 @@ async def list_accessible_scenarios(
     session: AsyncSession,
     user_id: str,
     *,
+    email: str | None = None,
     is_superuser: bool = False,
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[ScenarioRecord], int]:
-    base = accessible_scenarios_query(user_id, is_superuser=is_superuser)
+    base = accessible_scenarios_query(user_id, email=email, is_superuser=is_superuser)
     total = await session.scalar(select(func.count()).select_from(base.subquery()))
     rows = await session.scalars(base.order_by(ScenarioRecord.scenario_id).offset(offset).limit(limit))
     return list(rows), total or 0
 
 
-def accessible_slots_query(user_id: str, *, is_superuser: bool = False, scenario_id: str | None = None):
+def accessible_slots_query(user_id: str, *, email: str | None = None, is_superuser: bool = False, scenario_id: str | None = None):
     query = select(SlotRecord)
     if scenario_id is not None:
         query = query.where(SlotRecord.scenario_id == scenario_id)
     if not is_superuser:
-        scenarios = accessible_scenarios_query(user_id, is_superuser=False).subquery()
+        scenarios = accessible_scenarios_query(user_id, email=email, is_superuser=False).subquery()
         query = query.join(scenarios, SlotRecord.scenario_id == scenarios.c.scenario_id)
     return query
 
@@ -42,12 +48,13 @@ async def list_accessible_slots(
     session: AsyncSession,
     user_id: str,
     *,
+    email: str | None = None,
     is_superuser: bool = False,
     scenario_id: str | None = None,
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[SlotRecord], int]:
-    base = accessible_slots_query(user_id, is_superuser=is_superuser, scenario_id=scenario_id)
+    base = accessible_slots_query(user_id, email=email, is_superuser=is_superuser, scenario_id=scenario_id)
     total = await session.scalar(select(func.count()).select_from(base.subquery()))
     rows = await session.scalars(base.order_by(SlotRecord.slot_id).offset(offset).limit(limit))
     return list(rows), total or 0

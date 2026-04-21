@@ -26,7 +26,7 @@ async def create_step(
 ) -> dict[str, Any]:
     ensure_user_scope(user_id, current_user)
     ensure_step_collection(collection)
-    scenario = await get_scenario_for_user(session, user_id, scenario_id, is_superuser=current_user.is_superuser)
+    scenario = await get_scenario_for_user(session, user_id, scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
     require_scenario_owner(scenario, current_user)
     definition = dict(scenario.definition)
     steps = mutable_step_collection(definition, collection)
@@ -57,7 +57,7 @@ async def update_step(
 ) -> dict[str, Any]:
     ensure_user_scope(user_id, current_user)
     ensure_step_collection(collection)
-    scenario = await get_scenario_for_user(session, user_id, scenario_id, is_superuser=current_user.is_superuser)
+    scenario = await get_scenario_for_user(session, user_id, scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
     require_scenario_owner(scenario, current_user)
     definition = dict(scenario.definition)
     steps = mutable_step_collection(definition, collection)
@@ -89,7 +89,7 @@ async def delete_step(
 ) -> dict[str, Any]:
     ensure_user_scope(user_id, current_user)
     ensure_step_collection(collection)
-    scenario = await get_scenario_for_user(session, user_id, scenario_id, is_superuser=current_user.is_superuser)
+    scenario = await get_scenario_for_user(session, user_id, scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
     require_scenario_owner(scenario, current_user)
     definition = dict(scenario.definition)
     steps = mutable_step_collection(definition, collection)

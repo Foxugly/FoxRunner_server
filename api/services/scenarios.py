@@ -48,7 +48,7 @@ async def update_owned_scenario(
     config: AppConfig,
     current_user: User,
 ) -> dict[str, object]:
-    record = await get_scenario_for_user(session, str(current_user.email), scenario_id, is_superuser=current_user.is_superuser)
+    record = await get_scenario_for_user(session, str(current_user.email), scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
     require_scenario_owner(record, current_user)
     before = scenario_summary(record)
     if payload.scenario_id and payload.scenario_id != record.scenario_id:
@@ -80,7 +80,7 @@ async def duplicate_owned_scenario(
     config: AppConfig,
     current_user: User,
 ) -> dict[str, object]:
-    source = await get_scenario_for_user(session, str(current_user.email), scenario_id, is_superuser=current_user.is_superuser)
+    source = await get_scenario_for_user(session, str(current_user.email), scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
     require_scenario_owner(source, current_user)
     record = await create_scenario(
         session, scenario_id=new_scenario_id, owner_user_id=source.owner_user_id, description=source.description, definition=dict(source.definition or {})
@@ -100,7 +100,7 @@ async def delete_owned_scenario(
     config: AppConfig,
     current_user: User,
 ) -> dict[str, object]:
-    record = await get_scenario_for_user(session, str(current_user.email), scenario_id, is_superuser=current_user.is_superuser)
+    record = await get_scenario_for_user(session, str(current_user.email), scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
     require_scenario_owner(record, current_user)
     if await session.scalar(select(SlotRecord.id).where(SlotRecord.scenario_id == scenario_id)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Supprime ou deplace les slots avant le scenario.")
@@ -113,7 +113,7 @@ async def delete_owned_scenario(
 
 
 async def share_owned_scenario(session: AsyncSession, *, scenario_id: str, share_user_id: str, current_user: User) -> dict[str, object]:
-    record = await get_scenario_for_user(session, str(current_user.email), scenario_id, is_superuser=current_user.is_superuser)
+    record = await get_scenario_for_user(session, str(current_user.email), scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
     require_scenario_owner(record, current_user)
     share = await share_scenario(session, scenario_id, share_user_id)
     await write_audit(session, actor_user_id=actor_id(current_user), action="scenario.share", target_type="scenario", target_id=scenario_id, after={"user_id": share.user_id})
@@ -121,7 +121,7 @@ async def share_owned_scenario(session: AsyncSession, *, scenario_id: str, share
 
 
 async def unshare_owned_scenario(session: AsyncSession, *, scenario_id: str, share_user_id: str, current_user: User) -> dict[str, object]:
-    record = await get_scenario_for_user(session, str(current_user.email), scenario_id, is_superuser=current_user.is_superuser)
+    record = await get_scenario_for_user(session, str(current_user.email), scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
     require_scenario_owner(record, current_user)
     await unshare_scenario(session, scenario_id, share_user_id)
     await write_audit(session, actor_user_id=actor_id(current_user), action="scenario.unshare", target_type="scenario", target_id=scenario_id, before={"user_id": share_user_id})

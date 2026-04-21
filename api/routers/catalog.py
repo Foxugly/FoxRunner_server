@@ -110,7 +110,7 @@ async def scenario_shares_endpoint(
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(current_active_user),
 ) -> dict[str, object]:
-    await get_scenario_for_user(session, str(current_user.email), scenario_id, is_superuser=current_user.is_superuser)
+    await get_scenario_for_user(session, str(current_user.email), scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
     return {"scenario_id": scenario_id, "user_ids": await list_scenario_shares(session, scenario_id)}
 
 
@@ -142,9 +142,9 @@ async def list_slots_endpoint(
     session: AsyncSession = Depends(get_async_session),
     current_user: User = Depends(current_active_user),
 ) -> dict[str, object]:
-    records, total = await list_accessible_slots(session, str(current_user.email), is_superuser=current_user.is_superuser, scenario_id=scenario_id, limit=limit, offset=offset)
+    records, total = await list_accessible_slots(session, str(current_user.email), email=current_user.email, is_superuser=current_user.is_superuser, scenario_id=scenario_id, limit=limit, offset=offset)
     if scenario_id is not None and total == 0 and not current_user.is_superuser:
-        await get_scenario_for_user(session, str(current_user.email), scenario_id, is_superuser=False)
+        await get_scenario_for_user(session, str(current_user.email), scenario_id, email=current_user.email, is_superuser=False)
     return page_response([slot_summary(record) for record in records], total=total, limit=limit, offset=offset)
 
 
@@ -171,7 +171,7 @@ async def get_slot_endpoint(
     current_user: User = Depends(current_active_user),
 ) -> dict[str, object]:
     record = await get_slot(session, slot_id)
-    await get_scenario_for_user(session, str(current_user.email), record.scenario_id, is_superuser=current_user.is_superuser)
+    await get_scenario_for_user(session, str(current_user.email), record.scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
     return slot_summary(record)
 
 
@@ -204,7 +204,7 @@ async def user_plan(
     current_user: User = Depends(current_active_user),
 ) -> dict[str, object]:
     ensure_user_scope(user_id, current_user)
-    scenario_ids = await scenario_ids_for_user(session, user_id, is_superuser=current_user.is_superuser)
+    scenario_ids = await scenario_ids_for_user(session, user_id, email=current_user.email, is_superuser=current_user.is_superuser)
     if not scenario_ids:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Aucun scenario pour cet utilisateur.")
     try:
@@ -223,7 +223,7 @@ async def user_slots(
     current_user: User = Depends(current_active_user),
 ) -> dict[str, object]:
     ensure_user_scope(user_id, current_user)
-    records, total = await list_accessible_slots(session, user_id, is_superuser=current_user.is_superuser, limit=limit, offset=offset)
+    records, total = await list_accessible_slots(session, user_id, email=current_user.email, is_superuser=current_user.is_superuser, limit=limit, offset=offset)
     return page_response([slot_summary(slot) for slot in records], total=total, limit=limit, offset=offset)
 
 
@@ -236,7 +236,7 @@ async def user_scenarios(
     current_user: User = Depends(current_active_user),
 ) -> dict[str, object]:
     ensure_user_scope(user_id, current_user)
-    records, total = await list_accessible_scenarios(session, user_id, is_superuser=current_user.is_superuser, limit=limit, offset=offset)
+    records, total = await list_accessible_scenarios(session, user_id, email=current_user.email, is_superuser=current_user.is_superuser, limit=limit, offset=offset)
     return page_response([scenario_summary_for_user(scenario, current_user) for scenario in records], total=total, limit=limit, offset=offset)
 
 
@@ -248,7 +248,7 @@ async def user_scenario(
     current_user: User = Depends(current_active_user),
 ) -> dict[str, object]:
     ensure_user_scope(user_id, current_user)
-    scenario = await get_scenario_for_user(session, user_id, scenario_id, is_superuser=current_user.is_superuser)
+    scenario = await get_scenario_for_user(session, user_id, scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
     return {**scenario_summary_for_user(scenario, current_user), "definition": scenario.definition}
 
 
@@ -260,7 +260,7 @@ async def scenario_step_collections(
     current_user: User = Depends(current_active_user),
 ) -> dict[str, list[dict[str, Any]]]:
     ensure_user_scope(user_id, current_user)
-    scenario = await get_scenario_for_user(session, user_id, scenario_id, is_superuser=current_user.is_superuser)
+    scenario = await get_scenario_for_user(session, user_id, scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
     return {collection: step_collection(scenario.definition, collection) for collection in sorted(STEP_COLLECTIONS)}
 
 
@@ -274,7 +274,7 @@ async def list_scenario_steps(
 ) -> list[dict[str, Any]]:
     ensure_user_scope(user_id, current_user)
     ensure_step_collection(collection)
-    scenario = await get_scenario_for_user(session, user_id, scenario_id, is_superuser=current_user.is_superuser)
+    scenario = await get_scenario_for_user(session, user_id, scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
     return step_collection(scenario.definition, collection)
 
 
@@ -289,7 +289,7 @@ async def get_scenario_step(
 ) -> dict[str, Any]:
     ensure_user_scope(user_id, current_user)
     ensure_step_collection(collection)
-    scenario = await get_scenario_for_user(session, user_id, scenario_id, is_superuser=current_user.is_superuser)
+    scenario = await get_scenario_for_user(session, user_id, scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
     return step_at(step_collection(scenario.definition, collection), index)
 
 
@@ -346,7 +346,7 @@ async def run_user_scenario(
     current_user: User = Depends(current_active_user),
 ) -> dict[str, object]:
     ensure_user_scope(user_id, current_user)
-    await get_scenario_for_user(session, user_id, scenario_id, is_superuser=current_user.is_superuser)
+    await get_scenario_for_user(session, user_id, scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
     service = await build_service_from_db(config, session)
     exit_code = service.run_scenario(scenario_id, dry_run=dry_run)
     return {"scenario_id": scenario_id, "dry_run": dry_run, "exit_code": exit_code, "success": exit_code == 0}
@@ -361,7 +361,7 @@ async def run_user_next(
     current_user: User = Depends(current_active_user),
 ) -> dict[str, object]:
     ensure_user_scope(user_id, current_user)
-    scenario_ids = await scenario_ids_for_user(session, user_id, is_superuser=current_user.is_superuser)
+    scenario_ids = await scenario_ids_for_user(session, user_id, email=current_user.email, is_superuser=current_user.is_superuser)
     if not scenario_ids:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Aucun scenario pour cet utilisateur.")
     service = await build_service_from_db(config, session, timezone_name=await timezone_for_user(session, user_id, current_user))
@@ -383,7 +383,7 @@ async def user_history(
     current_user: User = Depends(current_active_user),
 ) -> dict[str, object]:
     ensure_user_scope(user_id, current_user)
-    allowed_ids = await scenario_ids_for_user(session, user_id, is_superuser=current_user.is_superuser)
+    allowed_ids = await scenario_ids_for_user(session, user_id, email=current_user.email, is_superuser=current_user.is_superuser)
     if scenario_id is not None and scenario_id not in allowed_ids:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scenario introuvable pour cet utilisateur.")
     await import_history_jsonl(session, config.runtime.history_file)
@@ -409,7 +409,7 @@ async def user_scenario_data(
     current_user: User = Depends(current_active_user),
 ) -> dict[str, object]:
     ensure_user_scope(user_id, current_user)
-    if not await scenario_ids_for_user(session, user_id, is_superuser=current_user.is_superuser):
+    if not await scenario_ids_for_user(session, user_id, email=current_user.email, is_superuser=current_user.is_superuser):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Aucun scenario pour cet utilisateur.")
     data = load_scenario_data(config.runtime.scenarios_file)
     return {

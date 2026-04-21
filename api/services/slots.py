@@ -18,7 +18,7 @@ async def create_owned_slot(
     config: AppConfig,
     current_user: User,
 ) -> dict[str, object]:
-    scenario = await get_scenario_for_user(session, str(current_user.email), payload.scenario_id, is_superuser=current_user.is_superuser)
+    scenario = await get_scenario_for_user(session, str(current_user.email), payload.scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
     require_scenario_owner(scenario, current_user)
     record = await create_slot(session, slot_id=payload.slot_id, scenario_id=payload.scenario_id, days=payload.days, start=payload.start, end=payload.end, enabled=payload.enabled)
     await sync_slots_file(session, config.runtime.slots_file)
@@ -36,11 +36,11 @@ async def update_owned_slot(
     current_user: User,
 ) -> dict[str, object]:
     record = await get_slot(session, slot_id)
-    scenario = await get_scenario_for_user(session, str(current_user.email), record.scenario_id, is_superuser=current_user.is_superuser)
+    scenario = await get_scenario_for_user(session, str(current_user.email), record.scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
     require_scenario_owner(scenario, current_user)
     before = slot_summary(record)
     if payload.scenario_id is not None:
-        target_scenario = await get_scenario_for_user(session, str(current_user.email), payload.scenario_id, is_superuser=current_user.is_superuser)
+        target_scenario = await get_scenario_for_user(session, str(current_user.email), payload.scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
         require_scenario_owner(target_scenario, current_user)
         record.scenario_id = payload.scenario_id
     if payload.days is not None:
@@ -67,7 +67,7 @@ async def delete_owned_slot(
     current_user: User,
 ) -> dict[str, object]:
     record = await get_slot(session, slot_id)
-    scenario = await get_scenario_for_user(session, str(current_user.email), record.scenario_id, is_superuser=current_user.is_superuser)
+    scenario = await get_scenario_for_user(session, str(current_user.email), record.scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
     require_scenario_owner(scenario, current_user)
     before = slot_summary(record)
     await session.delete(record)

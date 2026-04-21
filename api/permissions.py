@@ -18,12 +18,19 @@ def require_user_scope(user_id: str, user: User) -> None:
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Acces utilisateur refuse.")
 
 
+def _is_scenario_owner(record: ScenarioRecord, user: User) -> bool:
+    # Owner identity is stored as either the UUID or the email depending on the
+    # creation path (seed vs create_scenario vs share). Accept both so the
+    # permission check doesn't depend on which code path populated the row.
+    return record.owner_user_id in {str(user.id), user.email}
+
+
 def require_scenario_owner(record: ScenarioRecord, user: User) -> None:
-    if not user.is_superuser and record.owner_user_id != str(user.email):
+    if not user.is_superuser and not _is_scenario_owner(record, user):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Seul le proprietaire peut modifier ce scenario.")
 
 
 def scenario_role(record: ScenarioRecord, user: User) -> tuple[str, bool]:
-    writable = user.is_superuser or record.owner_user_id == str(user.email)
+    writable = user.is_superuser or _is_scenario_owner(record, user)
     role = "superuser" if user.is_superuser else "owner" if writable else "reader"
     return role, writable

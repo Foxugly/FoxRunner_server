@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,20 @@ from scenarios.loader import ScenarioDefinition, build_scenarios_from_map, build
 from scheduler.model import TimeSlot
 
 STEP_COLLECTIONS = frozenset({"before_steps", "steps", "on_success", "on_failure", "finally_steps"})
+
+# Per-file async lock so that concurrent API requests writing the same
+# scenarios JSON serialize their read-modify-write sequence. DB is the source
+# of truth; the file is a derived artifact that must stay consistent with it.
+_SCENARIOS_FILE_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+def _scenarios_file_lock(path: Path) -> asyncio.Lock:
+    key = str(path.resolve())
+    lock = _SCENARIOS_FILE_LOCKS.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _SCENARIOS_FILE_LOCKS[key] = lock
+    return lock
 
 
 async def seed_catalog_from_json(session: AsyncSession, scenarios_file: Path, slots_file: Path) -> None:
@@ -53,19 +68,41 @@ async def seed_catalog_from_json(session: AsyncSession, scenarios_file: Path, sl
     await session.commit()
 
 
-async def list_scenarios_for_user(session: AsyncSession, user_id: str, *, is_superuser: bool = False) -> list[ScenarioRecord]:
+def _owner_candidates(user_id: str | None, email: str | None) -> tuple[str, ...]:
+    # Ownership records may store either the user's UUID or the email, depending
+    # on the write path (seed JSON vs. API create). Accept both so lookups are
+    # consistent regardless of the identifier the caller happens to have.
+    return tuple({value for value in (user_id, email) if value})
+
+
+async def list_scenarios_for_user(
+    session: AsyncSession,
+    user_id: str,
+    *,
+    email: str | None = None,
+    is_superuser: bool = False,
+) -> list[ScenarioRecord]:
     if is_superuser:
         result = await session.scalars(select(ScenarioRecord).order_by(ScenarioRecord.scenario_id))
         return list(result)
-    shared = select(ScenarioShareRecord.scenario_id).where(ScenarioShareRecord.user_id == user_id)
+    candidates = _owner_candidates(user_id, email)
+    shared = select(ScenarioShareRecord.scenario_id).where(ScenarioShareRecord.user_id.in_(candidates))
     result = await session.scalars(
-        select(ScenarioRecord).where((ScenarioRecord.owner_user_id == user_id) | (ScenarioRecord.scenario_id.in_(shared))).order_by(ScenarioRecord.scenario_id)
+        select(ScenarioRecord)
+        .where((ScenarioRecord.owner_user_id.in_(candidates)) | (ScenarioRecord.scenario_id.in_(shared)))
+        .order_by(ScenarioRecord.scenario_id)
     )
     return list(result)
 
 
-async def scenario_ids_for_user(session: AsyncSession, user_id: str, *, is_superuser: bool = False) -> set[str]:
-    return {scenario.scenario_id for scenario in await list_scenarios_for_user(session, user_id, is_superuser=is_superuser)}
+async def scenario_ids_for_user(
+    session: AsyncSession,
+    user_id: str,
+    *,
+    email: str | None = None,
+    is_superuser: bool = False,
+) -> set[str]:
+    return {scenario.scenario_id for scenario in await list_scenarios_for_user(session, user_id, email=email, is_superuser=is_superuser)}
 
 
 async def get_scenario_for_user(
@@ -73,17 +110,19 @@ async def get_scenario_for_user(
     user_id: str,
     scenario_id: str,
     *,
+    email: str | None = None,
     is_superuser: bool = False,
 ) -> ScenarioRecord:
     scenario = await session.scalar(select(ScenarioRecord).where(ScenarioRecord.scenario_id == scenario_id))
     if scenario is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Scenario introuvable.")
-    if is_superuser or scenario.owner_user_id == user_id:
+    candidates = _owner_candidates(user_id, email)
+    if is_superuser or scenario.owner_user_id in candidates:
         return scenario
     shared = await session.scalar(
         select(ScenarioShareRecord.id).where(
             ScenarioShareRecord.scenario_id == scenario_id,
-            ScenarioShareRecord.user_id == user_id,
+            ScenarioShareRecord.user_id.in_(candidates),
         )
     )
     if shared is None:
@@ -306,17 +345,18 @@ async def save_scenario_definition(
     definition: dict[str, Any],
     scenarios_file: Path,
 ) -> None:
-    raw = await export_scenarios_document(session, scenarios_file)
-    raw["scenarios"][record.scenario_id] = definition
-    try:
-        validate_scenarios_document(raw, scenarios_file.name)
-    except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
-    record.definition = definition
-    record.description = str(definition.get("description", ""))
-    flag_modified(record, "definition")
-    await session.commit()
-    _write_json_atomic(scenarios_file, raw)
+    async with _scenarios_file_lock(scenarios_file):
+        raw = await export_scenarios_document(session, scenarios_file)
+        raw["scenarios"][record.scenario_id] = definition
+        try:
+            validate_scenarios_document(raw, scenarios_file.name)
+        except Exception as exc:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+        record.definition = definition
+        record.description = str(definition.get("description", ""))
+        flag_modified(record, "definition")
+        await session.commit()
+        _write_json_atomic(scenarios_file, raw)
 
 
 async def export_scenarios_document(session: AsyncSession, scenarios_file: Path) -> dict[str, Any]:

@@ -13,7 +13,7 @@ from api.tasks import run_scenario_job
 
 
 async def enqueue_scenario_job(session: AsyncSession, *, user_id: str, scenario_id: str, dry_run: bool, current_user: User) -> dict[str, object]:
-    await get_scenario_for_user(session, user_id, scenario_id, is_superuser=current_user.is_superuser)
+    await get_scenario_for_user(session, user_id, scenario_id, email=current_user.email, is_superuser=current_user.is_superuser)
     job = await create_job(session, kind="run_scenario", user_id=user_id, target_id=scenario_id, dry_run=dry_run, payload={"scenario_id": scenario_id})
     task = run_scenario_job.delay(job.job_id, scenario_id, dry_run)
     await set_celery_task_id(session, job.job_id, task.id)
@@ -38,7 +38,7 @@ async def retry_job(session: AsyncSession, *, job_id: str, user_id: str, current
     source = await get_job_for_user(session, job_id, user_id, is_superuser=current_user.is_superuser)
     if source.kind != "run_scenario":
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Retry non supporte pour ce type de job.")
-    await get_scenario_for_user(session, user_id, source.target_id, is_superuser=current_user.is_superuser)
+    await get_scenario_for_user(session, user_id, source.target_id, email=current_user.email, is_superuser=current_user.is_superuser)
     retry = await create_job(
         session,
         kind=source.kind,
