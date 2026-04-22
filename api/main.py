@@ -21,7 +21,7 @@ from api.dependencies import get_config as get_config
 from api.dependencies import get_service as get_service
 from api.errors import install_error_handlers
 from api.http_logging import install_http_logging
-from api.logging_config import configure_api_logging
+from app.logging_config import configure_api_logging
 from api.payload_limit import install_payload_limit
 from api.rate_limit import install_rate_limit
 from api.routers.admin import router as admin_router

@@ -185,9 +185,8 @@ def renew_graph_subscriptions_task() -> dict:
             expiration_datetime__lt=renew_before.replace(tzinfo=None),
         )
     )
-    # Imported lazily so the test suite can monkey-patch without forcing
-    # the FastAPI module load at Celery boot.
-    from api.redaction import redact
+    # Imported lazily to keep monkey-patching cheap during tests.
+    from app.redaction import redact
 
     for record in records:
         try:

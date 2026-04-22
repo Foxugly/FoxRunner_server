@@ -23,7 +23,7 @@ from typing import Any
 import httpx
 from ninja.errors import HttpError
 
-from api.redaction import redact  # reused until phase 13 swap
+from app.redaction import redact
 from ops.models import GraphNotification, GraphSubscription
 
 GRAPH_BASE_URL = os.getenv("GRAPH_BASE_URL", "https://graph.microsoft.com/v1.0")

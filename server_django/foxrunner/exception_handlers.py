@@ -14,7 +14,7 @@ from django.http import Http404
 from ninja import NinjaAPI
 from ninja.errors import AuthenticationError, HttpError, ValidationError
 
-from api.redaction import redact_text  # reused until phase 13 swap
+from app.redaction import redact_text
 
 
 def _error_response(api: NinjaAPI, request, status: int, code: str, message: str, details: Any = None):

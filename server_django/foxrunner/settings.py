@@ -274,7 +274,7 @@ LOGGING = {
     "disable_existing_loggers": False,
     "formatters": {
         "plain": {"format": "%(levelname)s %(name)s %(message)s"},
-        "json": {"()": "api.logging_config.JsonFormatter"},  # reuse the existing formatter until phase 13
+        "json": {"()": "app.logging_config.JsonFormatter"},
     },
     "handlers": {
         "console": {

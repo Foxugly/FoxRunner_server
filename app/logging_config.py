@@ -1,10 +1,21 @@
+"""Shared logging utilities.
+
+The :class:`JsonFormatter` is referenced from Django ``LOGGING`` config
+and stays framework-agnostic so the CLI engine can reuse it too.
+
+``configure_api_logging`` is retained transiently for the FastAPI tree
+that is being deleted in the next step of the Phase 13 swap; once
+``api/`` is gone the helper can be removed.
+"""
+
 from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import UTC, datetime
 
-from api.redaction import redact
+from app.redaction import redact
 
 
 class JsonFormatter(logging.Formatter):
@@ -26,7 +37,6 @@ class JsonFormatter(logging.Formatter):
 
 def configure_api_logging(*, json_enabled: bool) -> None:
     logger = logging.getLogger("smiley.api")
-    import os
 
     if os.getenv("APP_ENV", "").lower() == "test" or os.getenv("API_LOG_HTTP_ENABLED", "true").lower() != "true":
         logger.disabled = True

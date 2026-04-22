@@ -14,7 +14,7 @@ from fastapi import HTTPException
 from api.artifacts import artifact_response, list_artifacts, prune_artifacts
 from api.feature_flags import is_feature_enabled
 from api.health import _check_celery, _check_redis, readiness
-from api.logging_config import JsonFormatter, configure_api_logging
+from app.logging_config import JsonFormatter, configure_api_logging
 from api.mail import send_password_reset_email
 from api.models import AppSettingRecord
 from api.retention import prune_database_records
