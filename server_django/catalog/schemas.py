@@ -249,3 +249,35 @@ class RunOut(Schema):
     dry_run: bool
     exit_code: int
     success: bool
+
+
+# --------------------------------------------------------------------------
+# Execution history (Phase 4.8). Mirrors ``HistoryEntryPayload`` /
+# ``HistoryPagePayload`` from ``api/schemas.py``.
+#
+# Quirks preserved verbatim:
+#   * Default ``limit`` is 20 (NOT 100 like other listings) -- matches
+#     FastAPI's ``Query(default=20)`` and avoids overwhelming the UI.
+#   * ``executed_at`` is serialised as an ISO 8601 UTC string with a ``Z``
+#     suffix (never ``None`` -- the DB column is non-nullable).
+# --------------------------------------------------------------------------
+
+
+class HistoryItem(Schema):
+    id: int
+    slot_key: str
+    slot_id: str
+    scenario_id: str
+    execution_id: str | None = None
+    executed_at: str
+    status: str
+    step: str
+    message: str
+    updated_at: str | None = None
+
+
+class HistoryPage(Schema):
+    items: list[HistoryItem]
+    total: int
+    limit: int
+    offset: int

@@ -14,10 +14,13 @@ from accounts.services import timezone_for_user
 from foxrunner.idempotency import get_idempotent_response, store_idempotent_response
 from ninja import Query, Router
 from ninja.errors import HttpError
+from ops import services as ops_services
 
+from app.config import load_config
 from catalog import services as scenario_services
 from catalog.schemas import (
     DeletedOut,
+    HistoryPage,
     RunOut,
     ScenarioDataOut,
     ScenarioDetailOut,
@@ -501,3 +504,58 @@ def run_user_next_endpoint(
     )
     exit_code = service.run_next_for_scenarios(scenario_ids, dry_run=dry_run)
     return {"dry_run": dry_run, "exit_code": exit_code, "success": exit_code == 0}
+
+
+# --------------------------------------------------------------------------
+# Execution history (Phase 4.8). One paginated GET under
+# /api/v1/users/{user_id}/history. Mirrors ``api/routers/catalog.py:374-403``.
+#
+# Quirks preserved verbatim:
+#   * Default ``limit=20`` (NOT 100) -- the UI displays history in a small
+#     panel; the FastAPI version uses the same default.
+#   * ``import_history_jsonl`` runs synchronously on every request -- it
+#     re-reads the legacy CLI file (``config.runtime.history_file``) and
+#     upserts into ``ops.execution_history`` so the DB-backed read stays
+#     consistent with what the CLI scheduler writes. Goes away in Phase 13
+#     when the CLI is rewritten to write directly to the DB.
+#   * The optional ``scenario_id`` query filter doubles as a permission
+#     check: when the caller is not a superuser AND the scenario is not
+#     in the user's accessible set, return 404 (NOT empty list). Mirrors
+#     ``api/routers/catalog.py:389-390``.
+#   * Non-superusers are also filtered to their accessible-scenario set
+#     via the ``scenario_ids`` filter on ``list_history``.
+# --------------------------------------------------------------------------
+
+
+@router.get("/users/{user_id}/history", response=HistoryPage, tags=["scenarios"])
+def user_history_endpoint(
+    request,
+    user_id: str,
+    limit: int = Query(default=20, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+    status: str | None = Query(default=None),
+    slot_id: str | None = Query(default=None),
+    scenario_id: str | None = Query(default=None),
+    execution_id: str | None = Query(default=None),
+):
+    current_user = request.auth
+    require_user_scope(user_id, current_user)
+    allowed_ids = scenario_services.scenario_ids_for_user(
+        user_id,
+        email=current_user.email,
+        is_superuser=current_user.is_superuser,
+    )
+    if scenario_id is not None and not current_user.is_superuser and scenario_id not in allowed_ids:
+        raise HttpError(404, "Scenario introuvable pour cet utilisateur.")
+    config = load_config()
+    ops_services.import_history_jsonl(config.runtime.history_file)
+    qs = ops_services.list_history(
+        status=status,
+        slot_id=slot_id,
+        scenario_id=scenario_id,
+        scenario_ids=allowed_ids if not current_user.is_superuser else None,
+        execution_id=execution_id,
+    )
+    total = qs.count()
+    items = [ops_services.serialize_history(record) for record in qs[offset : offset + limit]]
+    return {"items": items, "total": total, "limit": limit, "offset": offset}
