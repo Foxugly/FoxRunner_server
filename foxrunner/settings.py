@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
+import tempfile
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -23,6 +25,24 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 REPO_ROOT = BASE_DIR  # Phase 13 swap: foxrunner/ now sits at the repo root.
 
 load_dotenv(REPO_ROOT / ".env")
+
+# Detect Django test runs and redirect the JSON catalog files (otherwise the
+# scenarios/slots/steps API tests will mutate config/scenarios.json + slots.json
+# in the repo root via catalog.services._write_scenarios_file / sync_slots_file
+# (Phase 12.5 wired the JSON sync — Phase 13 added the test isolation).
+TESTING = "test" in sys.argv or os.environ.get("DJANGO_TEST_PROCESSES") is not None
+if TESTING:
+    _test_config_dir = Path(tempfile.gettempdir()) / "foxrunner-test-config"
+    _test_config_dir.mkdir(exist_ok=True)
+    # Seed valid empty docs so the loader doesn't crash on first read.
+    _test_scenarios = _test_config_dir / "scenarios.json"
+    _test_slots = _test_config_dir / "slots.json"
+    if not _test_scenarios.exists():
+        _test_scenarios.write_text('{"schema_version": 1, "data": {}, "scenarios": {}}\n', encoding="utf-8")
+    if not _test_slots.exists():
+        _test_slots.write_text('{"slots": []}\n', encoding="utf-8")
+    os.environ.setdefault("APP_SCENARIOS_FILE", str(_test_scenarios))
+    os.environ.setdefault("APP_SLOTS_FILE", str(_test_slots))
 
 logger = logging.getLogger(__name__)
 

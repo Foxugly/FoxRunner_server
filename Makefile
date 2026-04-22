@@ -12,9 +12,11 @@ relock:
 	$(PYTHON) -m piptools compile --quiet --strip-extras --output-file=requirements.lock requirements.txt
 	$(PYTHON) -m piptools compile --quiet --strip-extras --output-file=requirements-dev.lock requirements-dev.txt
 
-# CLI engine tests (framework-agnostic).
+# CLI engine tests (framework-agnostic). Targets tests/ explicitly so
+# unittest discover doesn't pick up the Django app test packages, which
+# require a Django settings bootstrap and must run via manage.py test.
 test:
-	$(PYTHON) -m unittest
+	$(PYTHON) -m unittest discover -s tests
 
 # Django backend tests.
 test-django:
