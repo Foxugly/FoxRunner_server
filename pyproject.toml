@@ -4,6 +4,13 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["F", "E4", "E7", "E9", "I", "B", "UP", "SIM"]
+
+# Django auto-generates migration files; reformatting them to satisfy ruff
+# would diverge from `makemigrations` output and cause repeat I001/UP/SIM
+# fixes every time a new model lands. Ignore the linter on those files.
+[tool.ruff.lint.per-file-ignores]
+"server_django/**/migrations/*.py" = ["I001", "E501", "UP", "SIM", "B"]
+
 # FastAPI idiomatically uses Depends(), Query(), Body(), etc. as defaults so
 # request-scoped dependencies are re-evaluated per request. Whitelisting them
 # suppresses B008 (function-call-in-default-argument) only for those APIs.
