@@ -1232,3 +1232,139 @@ def metrics_text() -> str:
         f"foxrunner_graph_subscriptions_expiring {graph['subscriptions_expiring']}",
     ]
     return "\n".join(lines) + "\n"
+
+
+# --------------------------------------------------------------------------
+# Phase 8 -- Microsoft Graph orchestrators. Sync ports of
+# ``api/services/graph.py``. The handlers compose the lower-level
+# ``ops.graph`` HTTP client + persistence helpers with audit writes; the
+# Ninja endpoints stay thin and delegate to these.
+# --------------------------------------------------------------------------
+
+
+def _get_graph_subscription(subscription_id: str) -> GraphSubscription:
+    """404 when the subscription_id is unknown locally. Mirrors ``api/services/graph.py::_get_subscription``."""
+    try:
+        return GraphSubscription.objects.get(subscription_id=subscription_id)
+    except GraphSubscription.DoesNotExist:
+        raise HttpError(404, "Subscription Graph introuvable.") from None
+
+
+def create_graph_subscription_service(
+    *,
+    resource: str,
+    change_type: str,
+    notification_url: str,
+    expiration_datetime: datetime,
+    lifecycle_notification_url: str | None,
+    current_user: User,
+) -> dict[str, Any]:
+    """POST /graph/subscriptions. Sync port of ``api/services/graph.py::create_subscription``.
+
+    Calls Microsoft Graph then upserts the local row + writes an audit row
+    so the creation appears in /audit alongside renew/delete.
+    """
+    from ops import graph as graph_module
+
+    expiration_iso = _utc_iso(expiration_datetime) or ""
+    subscription = graph_module.create_graph_subscription(
+        resource=resource,
+        change_type=change_type,
+        notification_url=notification_url,
+        expiration_datetime=expiration_iso,
+        lifecycle_notification_url=lifecycle_notification_url,
+    )
+    record = graph_module.save_graph_subscription(
+        subscription=subscription,
+        resource=resource,
+        change_type=change_type,
+        notification_url=notification_url,
+        lifecycle_notification_url=lifecycle_notification_url,
+    )
+    result = graph_module.serialize_graph_subscription(record)
+    write_audit(
+        actor=current_user,
+        action="graph.subscription_create",
+        target_type="graph_subscription",
+        target_id=record.subscription_id,
+        after=result,
+    )
+    return result
+
+
+def list_graph_subscriptions(*, limit: int, offset: int) -> tuple[list[dict[str, Any]], int]:
+    """GET /graph/subscriptions. Sync port of ``api/services/graph.py::list_subscriptions``."""
+    from ops import graph as graph_module
+
+    qs = GraphSubscription.objects.all().order_by("-id")
+    total = qs.count()
+    rows = list(qs[offset : offset + limit])
+    return [graph_module.serialize_graph_subscription(record) for record in rows], total
+
+
+def renew_graph_subscription_service(
+    *,
+    subscription_id: str,
+    expiration_datetime: datetime,
+    current_user: User,
+) -> dict[str, Any]:
+    """PATCH /graph/subscriptions/{subscription_id}. Sync port of ``api/services/graph.py::renew_subscription``."""
+    from ops import graph as graph_module
+
+    record = _get_graph_subscription(subscription_id)
+    before = graph_module.serialize_graph_subscription(record)
+    expiration_iso = _utc_iso(expiration_datetime) or ""
+    raw = graph_module.renew_graph_subscription(subscription_id, expiration_iso)
+    record.expiration_datetime = graph_module._parse_graph_datetime(raw.get("expirationDateTime", expiration_iso))
+    record.raw_payload = raw
+    record.save()
+    record.refresh_from_db()
+    result = graph_module.serialize_graph_subscription(record)
+    write_audit(
+        actor=current_user,
+        action="graph.subscription_renew",
+        target_type="graph_subscription",
+        target_id=subscription_id,
+        before=before,
+        after=result,
+    )
+    return result
+
+
+def delete_graph_subscription_service(
+    *,
+    subscription_id: str,
+    current_user: User,
+) -> dict[str, Any]:
+    """DELETE /graph/subscriptions/{subscription_id}. Sync port of ``api/services/graph.py::delete_subscription``."""
+    from ops import graph as graph_module
+
+    record = _get_graph_subscription(subscription_id)
+    before = graph_module.serialize_graph_subscription(record)
+    graph_module.delete_graph_subscription(subscription_id)
+    record.delete()
+    write_audit(
+        actor=current_user,
+        action="graph.subscription_delete",
+        target_type="graph_subscription",
+        target_id=subscription_id,
+        before=before,
+    )
+    return {"deleted": subscription_id}
+
+
+def list_graph_notifications(
+    *,
+    limit: int,
+    offset: int,
+    subscription_id: str | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """GET /graph/notifications. Sync port of ``api/services/graph.py::list_notifications``."""
+    from ops import graph as graph_module
+
+    qs = GraphNotification.objects.all().order_by("-id")
+    if subscription_id:
+        qs = qs.filter(subscription_id=subscription_id)
+    total = qs.count()
+    rows = list(qs[offset : offset + limit])
+    return [graph_module.serialize_graph_notification(record) for record in rows], total

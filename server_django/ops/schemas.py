@@ -201,3 +201,83 @@ class ImportDryRun(Schema):
 
 class RetentionResult(Schema):
     removed: dict[str, int]
+
+
+# --------------------------------------------------------------------------
+# Phase 8 -- Microsoft Graph subscriptions + notifications
+# --------------------------------------------------------------------------
+
+
+class GraphSubscriptionIn(Schema):
+    """POST /graph/subscriptions body. Mirrors ``api/schemas.py::GraphSubscriptionPayload``.
+
+    ``expiration_datetime`` MUST be timezone-aware -- the FastAPI version
+    enforces UTC via a Pydantic validator; Ninja accepts any ``datetime``
+    so the orchestrator normalises with ``_utc_iso`` before forwarding to
+    Graph.
+    """
+
+    resource: str
+    change_type: str = "created,updated"
+    notification_url: str
+    expiration_datetime: datetime
+    lifecycle_notification_url: str | None = None
+
+
+class GraphSubscriptionOut(Schema):
+    """Serialised :class:`ops.models.GraphSubscription` row."""
+
+    subscription_id: str
+    resource: str
+    change_type: str
+    notification_url: str
+    lifecycle_notification_url: str | None = None
+    expiration_datetime: datetime | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class GraphSubscriptionPage(Schema):
+    items: list[GraphSubscriptionOut]
+    total: int
+    limit: int
+    offset: int
+
+
+class GraphRenewIn(Schema):
+    """PATCH /graph/subscriptions/{subscription_id} body."""
+
+    expiration_datetime: datetime
+
+
+class GraphNotificationOut(Schema):
+    """Serialised :class:`ops.models.GraphNotification` row."""
+
+    id: int
+    subscription_id: str
+    change_type: str
+    resource: str
+    tenant_id: str | None = None
+    client_state: str | None = None
+    lifecycle_event: str | None = None
+    raw_payload: dict[str, Any]
+    created_at: datetime | None = None
+
+
+class GraphNotificationPage(Schema):
+    items: list[GraphNotificationOut]
+    total: int
+    limit: int
+    offset: int
+
+
+class AcceptedOut(Schema):
+    """Webhook response envelope -- mirrors ``api/schemas.py::AcceptedPayload``."""
+
+    accepted: int
+
+
+class DeletedOut(Schema):
+    """Mirrors ``api/schemas.py::DeletedPayload``. Used by DELETE /graph/subscriptions/{id}."""
+
+    deleted: str
