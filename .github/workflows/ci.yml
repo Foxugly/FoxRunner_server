@@ -28,9 +28,15 @@ jobs:
         run: python -m compileall accounts app catalog cli foxrunner network operations ops scenarios scheduler scripts state tests
       - name: Lint
         run: ruff check .
+      - name: Prepare runtime dir
+        # Django SQLite test DBs land under .runtime/; Ubuntu CI runners don't ship one.
+        shell: bash
+        run: mkdir -p .runtime
       - name: CLI engine tests (framework-agnostic)
+        # Restrict discovery to tests/ so unittest doesn't pick up the Django app
+        # test packages (which need manage.py to bootstrap the test DB).
         run: |
-          coverage run -m unittest
+          coverage run -m unittest discover -s tests
           coverage report --fail-under=84
       - name: Django migrate + tests
         env:
