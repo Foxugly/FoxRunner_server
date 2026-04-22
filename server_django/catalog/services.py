@@ -15,6 +15,7 @@ from typing import Any
 from accounts.models import User
 from accounts.permissions import require_user_scope
 from django.db import transaction
+from django.db.models import Q, QuerySet
 from ninja.errors import HttpError
 from ops.services import write_audit
 
@@ -313,3 +314,175 @@ def unshare_owned_scenario(*, scenario_id: str, share_user_id: str, current_user
         before={"user_id": share_user_id},
     )
     return {"deleted": share_user_id}
+
+
+# --------------------------------------------------------------------------
+# Slot CRUD (porting api/catalog.py:263-309 + api/catalog_queries.py +
+# api/services/slots.py).
+# --------------------------------------------------------------------------
+
+
+def slot_summary(record: Slot) -> dict[str, Any]:
+    """Return the ``SlotOut`` payload for a Slot row.
+
+    Mirrors ``api/catalog.py::slot_summary``.
+    """
+    return {
+        "slot_id": record.slot_id,
+        "days": list(record.days or []),
+        "start": record.start,
+        "end": record.end,
+        "scenario_id": record.scenario_id,
+        "enabled": record.enabled,
+    }
+
+
+def get_slot(slot_id: str) -> Slot:
+    try:
+        return Slot.objects.get(slot_id=slot_id)
+    except Slot.DoesNotExist:
+        raise HttpError(404, "Slot introuvable.") from None
+
+
+@transaction.atomic
+def create_slot(
+    *,
+    slot_id: str,
+    scenario_id: str,
+    days: list[int],
+    start: str,
+    end: str,
+    enabled: bool = True,
+) -> Slot:
+    # Ensure the scenario exists -- preserves the FastAPI 404 path when a
+    # client posts a slot under an unknown scenario.
+    scenario = get_scenario(scenario_id)
+    if Slot.objects.filter(slot_id=slot_id).exists():
+        raise HttpError(409, "Slot deja existant.")
+    return Slot.objects.create(
+        slot_id=slot_id,
+        scenario=scenario,
+        days=list(days),
+        start=start,
+        end=end,
+        enabled=enabled,
+    )
+
+
+def accessible_slots_queryset(
+    user: User,
+    *,
+    scenario_id: str | None = None,
+) -> QuerySet[Slot]:
+    """Return the queryset of slots the user can read.
+
+    Port of ``api/catalog_queries.py::accessible_slots_query``: a slot is
+    accessible iff the user owns or is shared on its scenario (or is a
+    superuser). The optional ``scenario_id`` filter preserves the FastAPI
+    behaviour.
+    """
+    qs = Slot.objects.all()
+    if scenario_id is not None:
+        qs = qs.filter(scenario_id=scenario_id)
+    if user.is_superuser:
+        return qs
+    candidates = {str(user.id), user.email}
+    shared_ids = ScenarioShare.objects.filter(user_id__in=candidates).values_list("scenario__scenario_id", flat=True)
+    return qs.filter(Q(scenario__owner_user_id__in=candidates) | Q(scenario_id__in=shared_ids))
+
+
+def list_accessible_slots(
+    user: User,
+    *,
+    scenario_id: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> tuple[list[Slot], int]:
+    base = accessible_slots_queryset(user, scenario_id=scenario_id)
+    total = base.count()
+    rows = list(base.order_by("slot_id")[offset : offset + limit])
+    return rows, total
+
+
+@transaction.atomic
+def create_owned_slot(*, payload, current_user: User) -> dict[str, Any]:
+    """Create a slot, requiring owner rights on the target scenario."""
+    scenario = get_scenario_for_user(payload.scenario_id, current_user)
+    require_scenario_owner(scenario, current_user)
+    record = create_slot(
+        slot_id=payload.slot_id,
+        scenario_id=payload.scenario_id,
+        days=payload.days,
+        start=payload.start,
+        end=payload.end,
+        enabled=payload.enabled,
+    )
+    # TODO(phase-13): port the JSON-file sync from
+    # ``api.catalog.sync_slots_file``. The dual-stack window keeps the
+    # FastAPI app responsible for ``config/slots.json`` so the CLI keeps
+    # working; once Phase 13 deletes the FastAPI tree this helper must
+    # call the equivalent of ``sync_slots_file`` via
+    # ``config.runtime.slots_file``.
+    result = slot_summary(record)
+    write_audit(
+        actor_user_id=_actor_id(current_user),
+        action="slot.create",
+        target_type="slot",
+        target_id=record.slot_id,
+        after=result,
+    )
+    return result
+
+
+@transaction.atomic
+def update_owned_slot(*, slot_id: str, payload, current_user: User) -> dict[str, Any]:
+    """Patch a slot. Requires owner rights on the slot's current scenario;
+    when ``scenario_id`` is reassigned, owner rights are also required on
+    the target scenario (parity with ``api/services/slots.py:42-45``).
+    """
+    record = get_slot(slot_id)
+    scenario = get_scenario_for_user(record.scenario_id, current_user)
+    require_scenario_owner(scenario, current_user)
+    before = slot_summary(record)
+    if payload.scenario_id is not None and payload.scenario_id != record.scenario_id:
+        target = get_scenario_for_user(payload.scenario_id, current_user)
+        require_scenario_owner(target, current_user)
+        record.scenario = target
+    if payload.days is not None:
+        record.days = list(payload.days)
+    if payload.start is not None:
+        record.start = payload.start
+    if payload.end is not None:
+        record.end = payload.end
+    if payload.enabled is not None:
+        record.enabled = payload.enabled
+    record.save()
+    # TODO(phase-13): port sync_slots_file (see create_owned_slot).
+    result = slot_summary(record)
+    write_audit(
+        actor_user_id=_actor_id(current_user),
+        action="slot.update",
+        target_type="slot",
+        target_id=record.slot_id,
+        before=before,
+        after=result,
+    )
+    return result
+
+
+@transaction.atomic
+def delete_owned_slot(*, slot_id: str, current_user: User) -> dict[str, Any]:
+    record = get_slot(slot_id)
+    scenario = get_scenario_for_user(record.scenario_id, current_user)
+    require_scenario_owner(scenario, current_user)
+    before = slot_summary(record)
+    record.delete()
+    # TODO(phase-13): port sync_slots_file (see create_owned_slot).
+    write_audit(
+        actor_user_id=_actor_id(current_user),
+        action="slot.delete",
+        target_type="slot",
+        target_id=slot_id,
+        before=before,
+    )
+    return {"deleted": slot_id}

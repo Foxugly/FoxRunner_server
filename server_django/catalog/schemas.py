@@ -2,7 +2,9 @@
 
 Mirrors the Pydantic payloads in ``api/schemas.py`` (``ScenarioPayload``,
 ``ScenarioUpdatePayload``, ``ScenarioSummaryPayload``, ``SharePayload``,
-``ShareListPayload``, ``ShareResponsePayload``, ``DeletedPayload``).
+``ShareListPayload``, ``ShareResponsePayload``, ``DeletedPayload``,
+``SlotPayload``, ``SlotUpdatePayload``, ``SlotSummaryPayload``,
+``SlotPagePayload``).
 
 The identifier validator preserves the FastAPI regex
 ``^[A-Za-z0-9_.:-]{1,128}$`` so the OpenAPI contract stays identical.
@@ -14,14 +16,31 @@ import re
 from typing import Any
 
 from ninja import Schema
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 
 ID_PATTERN = re.compile(r"^[A-Za-z0-9_.:-]{1,128}$")
+TIME_PATTERN = re.compile(r"^\d{2}:\d{2}$")
 
 
 def _validate_identifier(value: str, field_name: str) -> str:
     if not ID_PATTERN.match(value):
         raise ValueError(f"{field_name} doit contenir 1 a 128 caracteres alphanumeriques ou ._:-")
+    return value
+
+
+def _validate_time(value: str, field_name: str) -> None:
+    if not TIME_PATTERN.match(value):
+        raise ValueError(f"{field_name} doit etre au format HH:MM.")
+    hour, minute = value.split(":")
+    if int(hour) > 23 or int(minute) > 59:
+        raise ValueError(f"{field_name} doit etre une heure valide.")
+
+
+def _validate_days(value: list[int]) -> list[int]:
+    if not value:
+        raise ValueError("days ne peut pas etre vide.")
+    if any(day < 0 or day > 6 for day in value):
+        raise ValueError("days doit contenir uniquement des valeurs entre 0 et 6.")
     return value
 
 
@@ -79,3 +98,74 @@ class ShareOut(Schema):
 
 class DeletedOut(Schema):
     deleted: str
+
+
+class SlotIn(Schema):
+    slot_id: str
+    scenario_id: str
+    days: list[int]
+    start: str
+    end: str
+    enabled: bool = True
+
+    @field_validator("slot_id", "scenario_id")
+    @classmethod
+    def _check_ids(cls, value: str) -> str:
+        return _validate_identifier(value, "id")
+
+    @field_validator("days")
+    @classmethod
+    def _check_days(cls, value: list[int]) -> list[int]:
+        return _validate_days(value)
+
+    @model_validator(mode="after")
+    def _check_time_window(self) -> SlotIn:
+        _validate_time(self.start, "start")
+        _validate_time(self.end, "end")
+        if self.start >= self.end:
+            raise ValueError("start doit etre strictement inferieur a end.")
+        return self
+
+
+class SlotPatchIn(Schema):
+    scenario_id: str | None = None
+    days: list[int] | None = None
+    start: str | None = None
+    end: str | None = None
+    enabled: bool | None = None
+
+    @field_validator("scenario_id")
+    @classmethod
+    def _check_optional_scenario_id(cls, value: str | None) -> str | None:
+        return None if value is None else _validate_identifier(value, "scenario_id")
+
+    @field_validator("days")
+    @classmethod
+    def _check_optional_days(cls, value: list[int] | None) -> list[int] | None:
+        return None if value is None else _validate_days(value)
+
+    @model_validator(mode="after")
+    def _check_optional_time_window(self) -> SlotPatchIn:
+        if self.start is not None:
+            _validate_time(self.start, "start")
+        if self.end is not None:
+            _validate_time(self.end, "end")
+        if self.start is not None and self.end is not None and self.start >= self.end:
+            raise ValueError("start doit etre strictement inferieur a end.")
+        return self
+
+
+class SlotOut(Schema):
+    slot_id: str
+    days: list[int]
+    start: str
+    end: str
+    scenario_id: str
+    enabled: bool
+
+
+class SlotPage(Schema):
+    items: list[SlotOut]
+    total: int
+    limit: int
+    offset: int
