@@ -19,8 +19,10 @@ from django.db.models import Q, QuerySet
 from ninja.errors import HttpError
 from ops.services import write_audit
 
+from app.config import load_config
 from catalog.models import Scenario, ScenarioShare, Slot
-from catalog.permissions import _is_scenario_owner, require_scenario_owner
+from catalog.permissions import _is_scenario_owner, require_scenario_owner, scenario_role
+from scenarios.loader import load_scenario_data
 
 STEP_COLLECTIONS = frozenset({"before_steps", "steps", "on_success", "on_failure", "finally_steps"})
 
@@ -56,6 +58,15 @@ def _step_requires_enterprise_network(step: Any) -> bool:
 
 def _requires_enterprise_network(definition: dict[str, Any]) -> bool:
     return any(_step_requires_enterprise_network(step) for collection in STEP_COLLECTIONS for step in definition.get(collection, []))
+
+
+def scenario_summary_for_user(record: Scenario, user: User) -> dict[str, Any]:
+    """Return ``scenario_summary(record)`` augmented with ``role`` + ``writable``.
+
+    Mirrors ``api/routers/common.py::scenario_summary_for_user``.
+    """
+    role, writable = scenario_role(record, user)
+    return {**scenario_summary(record), "role": role, "writable": writable}
 
 
 def scenario_summary(record: Scenario) -> dict[str, Any]:
@@ -367,6 +378,62 @@ def create_slot(
         end=end,
         enabled=enabled,
     )
+
+
+def accessible_scenarios_queryset(
+    user_id: str,
+    *,
+    email: str | None = None,
+    is_superuser: bool = False,
+) -> QuerySet[Scenario]:
+    """Return the queryset of scenarios visible to ``user_id``.
+
+    Port of ``api/catalog_queries.py::accessible_scenarios_query``: a
+    scenario is accessible iff the user owns it, is share-recipient, or
+    is a superuser. ``user_id`` may be a UUID string or an email --
+    both forms are checked against ``Scenario.owner_user_id`` and
+    ``ScenarioShare.user_id`` to mirror the dual-stack identifier shape
+    that lives in the DB until Phase 5 normalizes everything to UUIDs.
+    """
+    qs = Scenario.objects.all()
+    if is_superuser:
+        return qs
+    candidates = {value for value in (user_id, email) if value}
+    shared_ids = ScenarioShare.objects.filter(user_id__in=candidates).values_list("scenario__scenario_id", flat=True)
+    return qs.filter(Q(owner_user_id__in=candidates) | Q(scenario_id__in=shared_ids))
+
+
+def list_accessible_scenarios(
+    user_id: str,
+    *,
+    email: str | None = None,
+    is_superuser: bool = False,
+    limit: int = 100,
+    offset: int = 0,
+) -> tuple[list[Scenario], int]:
+    base = accessible_scenarios_queryset(user_id, email=email, is_superuser=is_superuser)
+    total = base.count()
+    rows = list(base.order_by("scenario_id")[offset : offset + limit])
+    return rows, total
+
+
+def aggregate_scenario_data() -> dict[str, Any]:
+    """Read the JSON scenarios file and aggregate pushover/network keys.
+
+    Mirrors ``api/routers/catalog.py::user_scenario_data`` (the data
+    portion -- visibility check is performed by the caller). The
+    ``load_scenario_data`` import is module-level so tests can patch
+    ``catalog.services.load_scenario_data`` (the bound name in this
+    module).
+    """
+    config = load_config()
+    data = load_scenario_data(config.runtime.scenarios_file)
+    return {
+        "default_pushover_key": data.default_pushover_key,
+        "default_network_key": data.default_network_key,
+        "pushovers": sorted(data.pushovers),
+        "networks": sorted(data.networks),
+    }
 
 
 def accessible_slots_queryset(

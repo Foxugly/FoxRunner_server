@@ -189,3 +189,45 @@ class StepMutationOut(Schema):
 class StepDeleteOut(Schema):
     index: int
     deleted: dict[str, Any]
+
+
+# --------------------------------------------------------------------------
+# User-scoped catalog views (Phase 4.6). Mirrors ``ScenarioPagePayload`` /
+# ``ScenarioDetailPayload`` from ``api/schemas.py`` plus the ``role`` /
+# ``writable`` fields filled by ``catalog.permissions.scenario_role``.
+#
+# ``role`` is one of ``"superuser"``, ``"owner"``, ``"reader"`` and
+# ``writable`` mirrors ``role != "reader"``. Both are non-optional here
+# (we always populate them on the user-scoped endpoints) but stay
+# defaulted for back-compat with the bare ``ScenarioOut`` shape used by
+# the create/update endpoints.
+# --------------------------------------------------------------------------
+
+
+class ScenarioListItem(ScenarioOut):
+    """Page item: ``ScenarioOut`` + role + writable, both required."""
+
+    role: str
+    writable: bool
+
+
+class ScenarioListPage(Schema):
+    items: list[ScenarioListItem]
+    total: int
+    limit: int
+    offset: int
+
+
+class ScenarioDetailOut(ScenarioListItem):
+    """Single scenario detail: list-item shape + the full DSL definition JSON."""
+
+    definition: dict[str, Any]
+
+
+class ScenarioDataOut(Schema):
+    """Aggregated pushover/network keys read from ``config/scenarios.json``."""
+
+    default_pushover_key: str | None = None
+    default_network_key: str | None = None
+    pushovers: list[str]
+    networks: list[str]

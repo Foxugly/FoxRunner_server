@@ -12,11 +12,15 @@ from typing import Any
 from accounts.permissions import require_user_scope
 from foxrunner.idempotency import get_idempotent_response, store_idempotent_response
 from ninja import Query, Router
+from ninja.errors import HttpError
 
 from catalog import services as scenario_services
 from catalog.schemas import (
     DeletedOut,
+    ScenarioDataOut,
+    ScenarioDetailOut,
     ScenarioIn,
+    ScenarioListPage,
     ScenarioOut,
     ScenarioPatchIn,
     ShareIn,
@@ -313,3 +317,74 @@ def delete_step_endpoint(
         index=index,
         current_user=request.auth,
     )
+
+
+# --------------------------------------------------------------------------
+# User-scoped catalog views (Phase 4.6). Three GETs under
+# /api/v1/users/{user_id}/. Reads only -- mutations live on the resource
+# routes (POST /scenarios, PATCH /scenarios/{id}, ...).
+#
+# Quirks preserved verbatim:
+#   * The list/detail responses include ``role`` (superuser|owner|reader)
+#     and ``writable`` (= role != "reader"), populated by
+#     ``catalog.permissions.scenario_role``.
+#   * The detail endpoint returns the full DSL ``definition`` JSON in
+#     addition to the summary fields.
+#   * ``/scenario-data`` returns 404 when the user has zero accessible
+#     scenarios -- the FastAPI implementation surfaces this so the UI
+#     hides the section. Otherwise it loads ``config/scenarios.json``
+#     via ``scenarios.loader.load_scenario_data`` and returns the
+#     pushover/network keys sorted.
+# --------------------------------------------------------------------------
+
+
+@router.get("/users/{user_id}/scenarios", response=ScenarioListPage, tags=["scenarios"])
+def list_user_scenarios_endpoint(
+    request,
+    user_id: str,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+):
+    current_user = request.auth
+    require_user_scope(user_id, current_user)
+    records, total = scenario_services.list_accessible_scenarios(
+        user_id,
+        email=current_user.email,
+        is_superuser=current_user.is_superuser,
+        limit=limit,
+        offset=offset,
+    )
+    return {
+        "items": [scenario_services.scenario_summary_for_user(record, current_user) for record in records],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@router.get("/users/{user_id}/scenarios/{scenario_id}", response=ScenarioDetailOut, tags=["scenarios"])
+def get_user_scenario_endpoint(request, user_id: str, scenario_id: str):
+    current_user = request.auth
+    require_user_scope(user_id, current_user)
+    scenario = scenario_services.get_scenario_for_user(scenario_id, current_user)
+    return {
+        **scenario_services.scenario_summary_for_user(scenario, current_user),
+        "definition": scenario.definition or {},
+    }
+
+
+@router.get("/users/{user_id}/scenario-data", response=ScenarioDataOut, tags=["scenarios"])
+def get_user_scenario_data_endpoint(request, user_id: str):
+    current_user = request.auth
+    require_user_scope(user_id, current_user)
+    # 404 when the user has nothing -- mirrors the FastAPI behaviour and
+    # avoids reading the JSON file for users that wouldn't see any of the
+    # aggregated keys anyway.
+    qs = scenario_services.accessible_scenarios_queryset(
+        user_id,
+        email=current_user.email,
+        is_superuser=current_user.is_superuser,
+    )
+    if not qs.exists():
+        raise HttpError(404, "Aucun scenario pour cet utilisateur.")
+    return scenario_services.aggregate_scenario_data()
