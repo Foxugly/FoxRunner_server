@@ -11,7 +11,7 @@ def main() -> int:
     for pattern in ("*.pyc",):
         for path in Path(".").rglob(pattern):
             path.unlink(missing_ok=True)
-    for path in (Path(".coverage"), Path(".ruff_cache"), Path(".runtime/alembic_validation.db")):
+    for path in (Path(".coverage"), Path(".ruff_cache"), Path(".runtime/django-ci.db"), Path(".runtime/migration-django-test.db")):
         if path.is_dir():
             shutil.rmtree(path)
         else:
