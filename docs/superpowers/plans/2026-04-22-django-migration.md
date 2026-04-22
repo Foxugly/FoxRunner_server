@@ -397,8 +397,8 @@ class Job(models.Model):
     class Meta:
         db_table = "jobs"
         indexes = [
-            models.Index(fields=["status", "created_at"], name="ix_jobs_status_created"),
-            models.Index(fields=["user_id", "created_at"], name="ix_jobs_user_created"),
+            # From migrations/versions/20260421_0007_query_indexes.py
+            models.Index(fields=["status", "updated_at"], name="ix_jobs_status_updated_at"),
         ]
 
 
@@ -413,6 +413,10 @@ class JobEvent(models.Model):
 
     class Meta:
         db_table = "job_events"
+        indexes = [
+            # From migrations/versions/20260421_0011_operational_indexes.py
+            models.Index(fields=["job", "created_at"], name="ix_job_events_job_created_at"),
+        ]
 
 
 class GraphSubscription(models.Model):
@@ -422,7 +426,7 @@ class GraphSubscription(models.Model):
     notification_url = models.CharField(max_length=1024, default="")
     lifecycle_notification_url = models.CharField(max_length=1024, null=True, blank=True)
     client_state = models.CharField(max_length=256, null=True, blank=True)
-    expiration_datetime = models.DateTimeField(null=True, blank=True)
+    expiration_datetime = models.DateTimeField(null=True, blank=True, db_index=True)  # ix_graph_subscriptions_expiration (rev 20260421_0007)
     raw_payload = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -458,7 +462,7 @@ class AuditEntry(models.Model):
     target_id = models.CharField(max_length=320, db_index=True)
     before = models.JSONField(default=dict, blank=True)
     after = models.JSONField(default=dict, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)  # ix_audit_log_created_at (rev 20260421_0007)
 
     class Meta:
         db_table = "audit_log"
@@ -481,7 +485,8 @@ class ExecutionHistory(models.Model):
             models.UniqueConstraint(fields=["execution_id", "slot_id", "scenario_id"], name="uq_execution_history_identity"),
         ]
         indexes = [
-            models.Index(fields=["scenario_id", "executed_at"], name="ix_execution_history_scenario_executed"),
+            # From migrations/versions/20260421_0011_operational_indexes.py
+            models.Index(fields=["scenario_id", "executed_at"], name="ix_execution_history_scenario_executed_at"),
         ]
 
 
