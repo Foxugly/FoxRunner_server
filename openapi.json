@@ -1316,9 +1316,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Admin Export Catalog Api V1 Admin Export Get"
+                  "$ref": "#/components/schemas/AdminExportPayload"
                 }
               }
             }
@@ -4169,6 +4167,26 @@
           "graph_subscriptions_expiring"
         ],
         "title": "AdminDbStatsPayload"
+      },
+      "AdminExportPayload": {
+        "properties": {
+          "scenarios": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Scenarios"
+          },
+          "slots": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Slots"
+          }
+        },
+        "type": "object",
+        "required": [
+          "scenarios",
+          "slots"
+        ],
+        "title": "AdminExportPayload"
       },
       "AdminImportDryRunPayload": {
         "properties": {
