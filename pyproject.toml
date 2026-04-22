@@ -20,7 +20,7 @@ extend-immutable-calls = [
 ]
 
 [tool.coverage.run]
-source = ["api", "app", "cli", "network", "operations", "scenarios", "scheduler", "state"]
+source = ["api", "app", "cli", "network", "operations", "scenarios", "scheduler", "state", "server_django/accounts", "server_django/catalog", "server_django/ops", "server_django/foxrunner"]
 
 [tool.coverage.report]
 fail_under = 84
