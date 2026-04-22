@@ -185,6 +185,8 @@ Port the 11 SQLAlchemy models from `api/models.py` (User is already done) into `
 
 Before writing any field, re-open `api/models.py`. The mapping table from the handoff brief is the authoritative target.
 
+> **Dual-stack migration quirk (`--fake-initial`).** During Phases 2–12 the dev DB at `.runtime/users.db` is shared with the FastAPI app — Alembic has already created the catalog/ops/auth tables. When you run `manage.py migrate <app>` for the first time, Django crashes with "table X already exists" because `django_migrations` has no record of the initial migration. The correct workaround during the dual-stack window is `manage.py migrate <app> --fake-initial`, which records the initial migration as applied without re-creating the tables. This is the standard Django pattern for "schema already exists, just record the migration as done." After Phase 13, when Alembic is gone, `migrate` works normally. Document this in `docs/MIGRATION_NOTES.md` (created in Phase 11) so contributors don't waste time debugging it.
+
 ### Task 2.1 — Catalog models (Scenario, ScenarioShare, Slot)
 
 **Files:**

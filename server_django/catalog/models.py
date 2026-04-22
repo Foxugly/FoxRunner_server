@@ -1,9 +1,10 @@
 """Catalog models — Scenario, Slot, ScenarioShare.
 
-Each field mirrors the SQLAlchemy counterpart in ``api/models.py``. Indexes
-declared by past Alembic revisions (``20260421_0007``, ``20260421_0009``,
-``20260421_0011``) must be reproduced here so ``makemigrations`` stays
-drift-free.
+Each field mirrors the SQLAlchemy counterpart in ``api/models.py``. The
+relevant Alembic revisions for catalog tables are ``20260421_0001``
+(initial create + 6 indexes, all auto-derived from ``db_index``/``unique``/FK
+declarations) and ``20260421_0011`` (the ``ix_slots_scenario_enabled``
+composite, which must be declared explicitly in ``Slot.Meta.indexes``).
 """
 
 from __future__ import annotations
