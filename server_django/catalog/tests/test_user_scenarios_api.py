@@ -53,19 +53,19 @@ class _BaseUserScenariosApiTest(TestCase):
         # Two scenarios for Alice + one for Bob (used by share tests).
         self.alice_scenario_a = Scenario.objects.create(
             scenario_id="sc-alice-a",
-            owner_user_id=str(self.alice.id),
+            owner=self.alice,
             description="alice A",
             definition={"steps": [{"type": "sleep", "seconds": 1}]},
         )
         self.alice_scenario_b = Scenario.objects.create(
             scenario_id="sc-alice-b",
-            owner_user_id=str(self.alice.id),
+            owner=self.alice,
             description="alice B",
             definition={"steps": []},
         )
         self.bob_scenario = Scenario.objects.create(
             scenario_id="sc-bob",
-            owner_user_id=str(self.bob.id),
+            owner=self.bob,
             description="bob",
             definition={"steps": []},
         )
@@ -90,7 +90,7 @@ class ListUserScenariosTest(_BaseUserScenariosApiTest):
     def test_list_user_scenarios_owner_sees_shared(self):
         # Bob shares his scenario with Alice -> Alice sees 3 total, the
         # shared one with role=reader / writable=False.
-        ScenarioShare.objects.create(scenario=self.bob_scenario, user_id=str(self.alice.id))
+        ScenarioShare.objects.create(scenario=self.bob_scenario, user=self.alice)
         response = self.client.get(
             f"/api/v1/users/{self.alice.id}/scenarios",
             **_auth(self.alice_token),
@@ -138,21 +138,11 @@ class ListUserScenariosTest(_BaseUserScenariosApiTest):
             self.assertTrue(item["writable"])
 
     def test_list_user_scenarios_email_alias(self):
-        # ``{user_id}`` accepts the email form -- mirrors the FastAPI
-        # dual-stack identifier shape until Phase 5 normalizes to UUIDs.
-        # ``require_user_scope`` recognizes both the UUID and the email,
-        # so the request returns 200. The candidate set used by the
-        # service is ``{user_id, current_user.email}``; when called via
-        # the email URL both collapse to the email, and only scenarios
-        # whose ``owner_user_id`` was seeded with the email form are
-        # listed (matches the FastAPI behaviour -- Phase 5 normalizes
-        # this once owner_user_id is a UUID FK).
-        Scenario.objects.create(
-            scenario_id="sc-alice-email-owned",
-            owner_user_id=self.alice.email,
-            description="seeded via email",
-            definition={"steps": []},
-        )
+        # ``{user_id}`` URL path still accepts the email form
+        # (``require_user_scope`` resolves via UUID-or-email). After
+        # phase 5 the catalog visibility filter is FK-based on the actor's
+        # User row, so the response lists all scenarios Alice owns
+        # regardless of which URL form was used.
         response = self.client.get(
             f"/api/v1/users/{self.alice.email}/scenarios",
             **_auth(self.alice_token),
@@ -160,8 +150,8 @@ class ListUserScenariosTest(_BaseUserScenariosApiTest):
         self.assertEqual(response.status_code, 200, response.content)
         body = response.json()
         ids = {item["scenario_id"] for item in body["items"]}
-        self.assertEqual(ids, {"sc-alice-email-owned"})
-        self.assertEqual(body["total"], 1)
+        self.assertEqual(ids, {"sc-alice-a", "sc-alice-b"})
+        self.assertEqual(body["total"], 2)
 
 
 class GetUserScenarioTest(_BaseUserScenariosApiTest):
@@ -180,7 +170,7 @@ class GetUserScenarioTest(_BaseUserScenariosApiTest):
         self.assertEqual(body["definition"], {"steps": [{"type": "sleep", "seconds": 1}]})
 
     def test_get_user_scenario_shared(self):
-        ScenarioShare.objects.create(scenario=self.bob_scenario, user_id=str(self.alice.id))
+        ScenarioShare.objects.create(scenario=self.bob_scenario, user=self.alice)
         response = self.client.get(
             f"/api/v1/users/{self.alice.id}/scenarios/{self.bob_scenario.scenario_id}",
             **_auth(self.alice_token),

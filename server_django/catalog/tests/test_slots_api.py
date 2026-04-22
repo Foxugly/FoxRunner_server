@@ -43,7 +43,7 @@ class _BaseSlotsApiTest(TestCase):
         # create more scenarios in their own setUp.
         self.scenario = Scenario.objects.create(
             scenario_id="sc-alice",
-            owner_user_id=str(self.alice.id),
+            owner=self.alice,
             description="alice scenario",
             definition={"steps": []},
         )
@@ -90,7 +90,7 @@ class CreateSlotTest(_BaseSlotsApiTest):
                 action="slot.create",
                 target_type="slot",
                 target_id="slot-1",
-                actor_user_id=str(self.alice.id),
+                actor=self.alice,
             ).exists()
         )
 
@@ -156,7 +156,7 @@ class CreateSlotTest(_BaseSlotsApiTest):
 
     def test_create_slot_scenario_not_owner_returns_403(self):
         # Bob is shared on Alice's scenario (read access) but not owner.
-        ScenarioShare.objects.create(scenario=self.scenario, user_id=str(self.bob.id))
+        ScenarioShare.objects.create(scenario=self.scenario, user=self.bob)
         response = self.client.post(
             "/api/v1/slots",
             data=json.dumps(self._payload()),
@@ -193,7 +193,7 @@ class ListSlotsTest(_BaseSlotsApiTest):
         # A second scenario owned by Bob, with one slot.
         self.bob_scenario = Scenario.objects.create(
             scenario_id="sc-bob",
-            owner_user_id=str(self.bob.id),
+            owner=self.bob,
             definition={"steps": []},
         )
         Slot.objects.create(
@@ -269,7 +269,7 @@ class GetSlotTest(_BaseSlotsApiTest):
         self.assertEqual(response.status_code, 404, response.content)
 
     def test_get_slot_shared_user(self):
-        ScenarioShare.objects.create(scenario=self.scenario, user_id=str(self.bob.id))
+        ScenarioShare.objects.create(scenario=self.scenario, user=self.bob)
         response = self.client.get(f"/api/v1/slots/{self.slot.slot_id}", **_auth(self.bob_token))
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(response.json()["slot_id"], "slot-x")
@@ -288,13 +288,13 @@ class PatchSlotTest(_BaseSlotsApiTest):
         # Second scenario owned by Alice (for the reassignment test).
         self.alice_scenario_2 = Scenario.objects.create(
             scenario_id="sc-alice-2",
-            owner_user_id=str(self.alice.id),
+            owner=self.alice,
             definition={"steps": []},
         )
         # Scenario owned by Bob (for the unowned-target reassignment test).
         self.bob_scenario = Scenario.objects.create(
             scenario_id="sc-bob",
-            owner_user_id=str(self.bob.id),
+            owner=self.bob,
             definition={"steps": []},
         )
 
@@ -331,7 +331,7 @@ class PatchSlotTest(_BaseSlotsApiTest):
         # Bob's scenario is visible to Alice only if shared; we share it
         # so the visibility check passes and the owner check is the one
         # that returns 403 (otherwise the test would assert 404 instead).
-        ScenarioShare.objects.create(scenario=self.bob_scenario, user_id=str(self.alice.id))
+        ScenarioShare.objects.create(scenario=self.bob_scenario, user=self.alice)
         response = self.client.patch(
             f"/api/v1/slots/{self.slot.slot_id}",
             data=json.dumps({"scenario_id": self.bob_scenario.scenario_id}),
@@ -344,7 +344,7 @@ class PatchSlotTest(_BaseSlotsApiTest):
 
     def test_patch_slot_non_owner_403(self):
         # Bob is shared on the scenario (read access) but not owner.
-        ScenarioShare.objects.create(scenario=self.scenario, user_id=str(self.bob.id))
+        ScenarioShare.objects.create(scenario=self.scenario, user=self.bob)
         response = self.client.patch(
             f"/api/v1/slots/{self.slot.slot_id}",
             data=json.dumps({"enabled": False}),
@@ -373,7 +373,7 @@ class DeleteSlotTest(_BaseSlotsApiTest):
         self.assertTrue(AuditEntry.objects.filter(action="slot.delete", target_id="slot-z").exists())
 
     def test_delete_slot_non_owner_403(self):
-        ScenarioShare.objects.create(scenario=self.scenario, user_id=str(self.bob.id))
+        ScenarioShare.objects.create(scenario=self.scenario, user=self.bob)
         response = self.client.delete(f"/api/v1/slots/{self.slot.slot_id}", **_auth(self.bob_token))
         self.assertEqual(response.status_code, 403, response.content)
         self.assertTrue(Slot.objects.filter(slot_id="slot-z").exists())

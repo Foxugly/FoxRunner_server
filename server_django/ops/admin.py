@@ -16,11 +16,12 @@ from ops.models import (
 
 @admin.register(Job)
 class JobAdmin(admin.ModelAdmin):
-    list_display = ("job_id", "kind", "status", "user_id", "target_id", "dry_run", "started_at", "finished_at")
+    list_display = ("job_id", "kind", "status", "user", "target_id", "dry_run", "started_at", "finished_at")
     list_filter = ("status", "kind", "dry_run")
-    search_fields = ("job_id", "celery_task_id", "user_id", "target_id")
+    search_fields = ("job_id", "celery_task_id", "user__email", "target_id")
     readonly_fields = ("id", "created_at", "updated_at", "started_at", "finished_at")
     ordering = ("-created_at",)
+    raw_id_fields = ("user",)
 
 
 @admin.register(JobEvent)
@@ -52,11 +53,12 @@ class GraphNotificationAdmin(admin.ModelAdmin):
 
 @admin.register(AuditEntry)
 class AuditEntryAdmin(admin.ModelAdmin):
-    list_display = ("action", "target_type", "target_id", "actor_user_id", "created_at")
+    list_display = ("action", "target_type", "target_id", "actor", "created_at")
     list_filter = ("action", "target_type")
-    search_fields = ("actor_user_id", "target_id")
+    search_fields = ("actor__email", "target_id")
     readonly_fields = ("id", "created_at")
     ordering = ("-created_at",)
+    raw_id_fields = ("actor",)
 
 
 @admin.register(ExecutionHistory)

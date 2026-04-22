@@ -49,7 +49,7 @@ class _BaseStepsApiTest(TestCase):
         self.bob_token = _login(self.client, "bob@example.com", "password123!")
         self.scenario = Scenario.objects.create(
             scenario_id="sc-alice",
-            owner_user_id=str(self.alice.id),
+            owner=self.alice,
             description="alice scenario",
             definition={"steps": []},
         )
@@ -91,7 +91,7 @@ class ListStepCollectionsTest(_BaseStepsApiTest):
         self.assertEqual(len(body["finally_steps"]), 1)
 
     def test_list_collections_shared_user_can_read(self):
-        ScenarioShare.objects.create(scenario=self.scenario, user_id=str(self.bob.id))
+        ScenarioShare.objects.create(scenario=self.scenario, user=self.bob)
         response = self.client.get(
             f"/api/v1/users/{self.bob.id}/scenarios/{self.scenario.scenario_id}/step-collections",
             **_auth(self.bob_token),
@@ -230,7 +230,7 @@ class CreateStepTest(_BaseStepsApiTest):
 
     def test_create_step_non_owner_returns_403(self):
         # Bob is shared on the scenario but cannot mutate.
-        ScenarioShare.objects.create(scenario=self.scenario, user_id=str(self.bob.id))
+        ScenarioShare.objects.create(scenario=self.scenario, user=self.bob)
         payload = {"step": {"type": "sleep", "seconds": 1}}
         response = self.client.post(
             f"/api/v1/users/{self.bob.id}/scenarios/{self.scenario.scenario_id}/step-collections/steps",
@@ -300,7 +300,7 @@ class UpdateStepTest(_BaseStepsApiTest):
         self.assertEqual(response.status_code, 404, response.content)
 
     def test_update_step_non_owner_403(self):
-        ScenarioShare.objects.create(scenario=self.scenario, user_id=str(self.bob.id))
+        ScenarioShare.objects.create(scenario=self.scenario, user=self.bob)
         payload = {"step": {"type": "sleep", "seconds": 9}}
         response = self.client.put(
             f"/api/v1/users/{self.bob.id}/scenarios/{self.scenario.scenario_id}/step-collections/steps/0",
@@ -344,7 +344,7 @@ class DeleteStepTest(_BaseStepsApiTest):
         self.assertEqual(response.status_code, 404, response.content)
 
     def test_delete_step_non_owner_403(self):
-        ScenarioShare.objects.create(scenario=self.scenario, user_id=str(self.bob.id))
+        ScenarioShare.objects.create(scenario=self.scenario, user=self.bob)
         response = self.client.delete(
             f"/api/v1/users/{self.bob.id}/scenarios/{self.scenario.scenario_id}/step-collections/steps/0",
             **_auth(self.bob_token),
@@ -392,7 +392,7 @@ class AuditRowsTest(_BaseStepsApiTest):
                 action="step.create",
                 target_type="scenario",
                 target_id=self.scenario.scenario_id,
-                actor_user_id=str(self.alice.id),
+                actor=self.alice,
             ).exists()
         )
         self.assertTrue(

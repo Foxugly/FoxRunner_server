@@ -50,19 +50,18 @@ def create_scenario_endpoint(request, payload: ScenarioIn):
     The ``Idempotency-Key`` header is honored: a replay with the same
     payload returns the stored response, a replay with a different
     payload returns 409 (raised inside ``get_idempotent_response``).
-    The user_id used for the idempotency partition is the email -- this
-    matches ``api/routers/catalog.py:67`` which passes
-    ``str(current_user.email)`` rather than the UUID.
+    The user_id used for the idempotency partition is the caller's UUID
+    (post-phase-5 the column is a ``UUIDField``).
     """
     current_user = request.auth
     payload_dump = payload.model_dump()
-    cached = get_idempotent_response(request, user_id=str(current_user.email), payload=payload_dump)
+    cached = get_idempotent_response(request, user_id=current_user.id, payload=payload_dump)
     if cached is not None:
         return 201, cached
     result = scenario_services.create_owned_scenario(payload=payload, current_user=current_user)
     store_idempotent_response(
         request,
-        user_id=str(current_user.email),
+        user_id=current_user.id,
         payload=payload_dump,
         response=result,
         status_code=201,
@@ -171,18 +170,17 @@ def create_slot_endpoint(request, payload: SlotIn):
     """Create a slot. Owner-only on the target scenario.
 
     The ``Idempotency-Key`` header is honored. The user_id used for the
-    idempotency partition is the email -- same shape as the scenarios
-    endpoint (Phase 4.2).
+    idempotency partition is the caller's UUID (post-phase-5).
     """
     current_user = request.auth
     payload_dump = payload.model_dump()
-    cached = get_idempotent_response(request, user_id=str(current_user.email), payload=payload_dump)
+    cached = get_idempotent_response(request, user_id=current_user.id, payload=payload_dump)
     if cached is not None:
         return 201, cached
     result = scenario_services.create_owned_slot(payload=payload, current_user=current_user)
     store_idempotent_response(
         request,
-        user_id=str(current_user.email),
+        user_id=current_user.id,
         payload=payload_dump,
         response=result,
         status_code=201,
@@ -353,9 +351,7 @@ def list_user_scenarios_endpoint(
     current_user = request.auth
     require_user_scope(user_id, current_user)
     records, total = scenario_services.list_accessible_scenarios(
-        user_id,
-        email=current_user.email,
-        is_superuser=current_user.is_superuser,
+        current_user,
         limit=limit,
         offset=offset,
     )
@@ -385,11 +381,7 @@ def get_user_scenario_data_endpoint(request, user_id: str):
     # 404 when the user has nothing -- mirrors the FastAPI behaviour and
     # avoids reading the JSON file for users that wouldn't see any of the
     # aggregated keys anyway.
-    qs = scenario_services.accessible_scenarios_queryset(
-        user_id,
-        email=current_user.email,
-        is_superuser=current_user.is_superuser,
-    )
+    qs = scenario_services.accessible_scenarios_queryset(current_user)
     if not qs.exists():
         raise HttpError(404, "Aucun scenario pour cet utilisateur.")
     return scenario_services.aggregate_scenario_data()
@@ -421,11 +413,7 @@ def get_user_scenario_data_endpoint(request, user_id: str):
 def user_plan_endpoint(request, user_id: str) -> dict[str, Any]:
     current_user = request.auth
     require_user_scope(user_id, current_user)
-    scenario_ids = scenario_services.scenario_ids_for_user(
-        user_id,
-        email=current_user.email,
-        is_superuser=current_user.is_superuser,
-    )
+    scenario_ids = scenario_services.scenario_ids_for_user(current_user)
     if not scenario_ids:
         raise HttpError(404, "Aucun scenario pour cet utilisateur.")
     try:
@@ -492,11 +480,7 @@ def run_user_next_endpoint(
 ):
     current_user = request.auth
     require_user_scope(user_id, current_user)
-    scenario_ids = scenario_services.scenario_ids_for_user(
-        user_id,
-        email=current_user.email,
-        is_superuser=current_user.is_superuser,
-    )
+    scenario_ids = scenario_services.scenario_ids_for_user(current_user)
     if not scenario_ids:
         raise HttpError(404, "Aucun scenario pour cet utilisateur.")
     service = scenario_services.build_service_from_db(
@@ -540,11 +524,7 @@ def user_history_endpoint(
 ):
     current_user = request.auth
     require_user_scope(user_id, current_user)
-    allowed_ids = scenario_services.scenario_ids_for_user(
-        user_id,
-        email=current_user.email,
-        is_superuser=current_user.is_superuser,
-    )
+    allowed_ids = scenario_services.scenario_ids_for_user(current_user)
     if scenario_id is not None and not current_user.is_superuser and scenario_id not in allowed_ids:
         raise HttpError(404, "Scenario introuvable pour cet utilisateur.")
     config = load_config()

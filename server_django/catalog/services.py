@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 from accounts.models import User
-from accounts.permissions import require_user_scope
+from accounts.permissions import require_user_scope, resolve_user
 from django.db import transaction
 from django.db.models import Q, QuerySet
 from ninja.errors import HttpError
@@ -46,11 +46,6 @@ def _lock_for(scenario_id: str) -> threading.Lock:
         return _LOCKS[scenario_id]
 
 
-def _actor_id(user: User) -> str:
-    """Audit ``actor_user_id`` matches the FastAPI ``actor_id`` shape (UUID string)."""
-    return str(user.id)
-
-
 def _step_requires_enterprise_network(step: Any) -> bool:
     if not isinstance(step, dict):
         return False
@@ -77,11 +72,16 @@ def scenario_summary_for_user(record: Scenario, user: User) -> dict[str, Any]:
 
 
 def scenario_summary(record: Scenario) -> dict[str, Any]:
-    """Return the ``ScenarioOut`` payload for a Scenario row."""
+    """Return the ``ScenarioOut`` payload for a Scenario row.
+
+    The ``owner_user_id`` field is serialized from ``record.owner_id`` (the
+    UUID PK of the FK target) cast to ``str`` -- the frontend contract
+    still expects a string-shaped owner identifier.
+    """
     definition = record.definition or {}
     return {
         "scenario_id": record.scenario_id,
-        "owner_user_id": record.owner_user_id,
+        "owner_user_id": str(record.owner_id),
         "description": record.description,
         "requires_enterprise_network": _requires_enterprise_network(definition),
         "before_steps": len(definition.get("before_steps", [])),
@@ -142,8 +142,7 @@ def get_scenario_for_user(scenario_id: str, user: User) -> Scenario:
         raise HttpError(404, "Scenario introuvable.") from None
     if user.is_superuser or _is_scenario_owner(scenario, user):
         return scenario
-    candidates = {str(user.id), user.email}
-    if ScenarioShare.objects.filter(scenario=scenario, user_id__in=candidates).exists():
+    if ScenarioShare.objects.filter(scenario=scenario, user=user).exists():
         return scenario
     raise HttpError(404, "Scenario introuvable pour cet utilisateur.")
 
@@ -152,7 +151,7 @@ def get_scenario_for_user(scenario_id: str, user: User) -> Scenario:
 def create_scenario(
     *,
     scenario_id: str,
-    owner_user_id: str,
+    owner: User,
     description: str = "",
     definition: dict[str, Any] | None = None,
 ) -> Scenario:
@@ -161,10 +160,10 @@ def create_scenario(
     payload = dict(definition or {"description": description, "steps": []})
     payload.setdefault("description", description)
     payload.setdefault("steps", [])
-    payload["owner_user_id"] = owner_user_id
+    payload["owner_user_id"] = str(owner.id)
     return Scenario.objects.create(
         scenario_id=scenario_id,
-        owner_user_id=owner_user_id,
+        owner=owner,
         description=str(payload.get("description", "")),
         definition=payload,
     )
@@ -186,22 +185,35 @@ def delete_scenario(scenario_id: str) -> None:
 
 @transaction.atomic
 def share_scenario(scenario_id: str, user_id: str) -> ScenarioShare:
-    """Idempotent share. Returns the existing row when (scenario, user) already exists."""
+    """Idempotent share. Returns the existing row when (scenario, user) already exists.
+
+    ``user_id`` is the request-supplied identifier (UUID string or email) --
+    resolved to a real ``User`` row via ``resolve_user``. The FK stores the
+    UUID; the email is only an input alias.
+    """
     scenario = get_scenario(scenario_id)
-    existing = ScenarioShare.objects.filter(scenario=scenario, user_id=user_id).first()
+    user = resolve_user(user_id)
+    existing = ScenarioShare.objects.filter(scenario=scenario, user=user).first()
     if existing is not None:
         return existing
-    return ScenarioShare.objects.create(scenario=scenario, user_id=user_id)
+    return ScenarioShare.objects.create(scenario=scenario, user=user)
 
 
 @transaction.atomic
 def unshare_scenario(scenario_id: str, user_id: str) -> None:
-    """Silently no-op when the share does not exist (matches FastAPI)."""
-    ScenarioShare.objects.filter(scenario__scenario_id=scenario_id, user_id=user_id).delete()
+    """Silently no-op when the share does not exist (matches FastAPI).
+
+    ``user_id`` accepts UUID-or-email like ``share_scenario``.
+    """
+    try:
+        user = resolve_user(user_id)
+    except HttpError:
+        return
+    ScenarioShare.objects.filter(scenario__scenario_id=scenario_id, user=user).delete()
 
 
 def list_scenario_shares(scenario_id: str) -> list[str]:
-    return list(ScenarioShare.objects.filter(scenario__scenario_id=scenario_id).order_by("user_id").values_list("user_id", flat=True))
+    return [str(uid) for uid in ScenarioShare.objects.filter(scenario__scenario_id=scenario_id).order_by("user_id").values_list("user_id", flat=True)]
 
 
 # --------------------------------------------------------------------------
@@ -212,16 +224,19 @@ def list_scenario_shares(scenario_id: str) -> list[str]:
 @transaction.atomic
 def create_owned_scenario(*, payload, current_user: User) -> dict[str, Any]:
     require_user_scope(payload.owner_user_id, current_user)
+    # ``payload.owner_user_id`` is a UUID-or-email string; the FK now
+    # demands an actual User row.
+    owner = current_user if payload.owner_user_id in {str(current_user.id), current_user.email} else resolve_user(payload.owner_user_id)
     record = create_scenario(
         scenario_id=payload.scenario_id,
-        owner_user_id=payload.owner_user_id,
+        owner=owner,
         description=payload.description,
         definition=payload.definition,
     )
     save_scenario_definition(record, record.definition)
     result = scenario_summary(record)
     write_audit(
-        actor_user_id=_actor_id(current_user),
+        actor=current_user,
         action="scenario.create",
         target_type="scenario",
         target_id=record.scenario_id,
@@ -243,7 +258,7 @@ def update_owned_scenario(*, scenario_id: str, payload, current_user: User) -> d
         record.scenario_id = payload.scenario_id
     if payload.owner_user_id is not None:
         require_user_scope(payload.owner_user_id, current_user)
-        record.owner_user_id = payload.owner_user_id
+        record.owner = current_user if payload.owner_user_id in {str(current_user.id), current_user.email} else resolve_user(payload.owner_user_id)
     definition = dict(record.definition or {})
     if payload.description is not None:
         definition["description"] = payload.description
@@ -253,7 +268,7 @@ def update_owned_scenario(*, scenario_id: str, payload, current_user: User) -> d
     save_scenario_definition(record, definition)
     result = scenario_summary(record)
     write_audit(
-        actor_user_id=_actor_id(current_user),
+        actor=current_user,
         action="scenario.update",
         target_type="scenario",
         target_id=record.scenario_id,
@@ -269,14 +284,14 @@ def duplicate_owned_scenario(*, scenario_id: str, new_scenario_id: str, current_
     require_scenario_owner(source, current_user)
     record = create_scenario(
         scenario_id=new_scenario_id,
-        owner_user_id=source.owner_user_id,
+        owner=source.owner,
         description=source.description,
         definition=dict(source.definition or {}),
     )
     save_scenario_definition(record, record.definition)
     result = scenario_summary(record)
     write_audit(
-        actor_user_id=_actor_id(current_user),
+        actor=current_user,
         action="scenario.duplicate",
         target_type="scenario",
         target_id=new_scenario_id,
@@ -295,7 +310,7 @@ def delete_owned_scenario(*, scenario_id: str, current_user: User) -> dict[str, 
     before = scenario_summary(record)
     delete_scenario(scenario_id)
     write_audit(
-        actor_user_id=_actor_id(current_user),
+        actor=current_user,
         action="scenario.delete",
         target_type="scenario",
         target_id=scenario_id,
@@ -310,13 +325,13 @@ def share_owned_scenario(*, scenario_id: str, share_user_id: str, current_user: 
     require_scenario_owner(record, current_user)
     share = share_scenario(scenario_id, share_user_id)
     write_audit(
-        actor_user_id=_actor_id(current_user),
+        actor=current_user,
         action="scenario.share",
         target_type="scenario",
         target_id=scenario_id,
-        after={"user_id": share.user_id},
+        after={"user_id": str(share.user_id)},
     )
-    return {"scenario_id": scenario_id, "user_id": share.user_id}
+    return {"scenario_id": scenario_id, "user_id": str(share.user_id)}
 
 
 @transaction.atomic
@@ -325,7 +340,7 @@ def unshare_owned_scenario(*, scenario_id: str, share_user_id: str, current_user
     require_scenario_owner(record, current_user)
     unshare_scenario(scenario_id, share_user_id)
     write_audit(
-        actor_user_id=_actor_id(current_user),
+        actor=current_user,
         action="scenario.unshare",
         target_type="scenario",
         target_id=scenario_id,
@@ -387,38 +402,29 @@ def create_slot(
     )
 
 
-def accessible_scenarios_queryset(
-    user_id: str,
-    *,
-    email: str | None = None,
-    is_superuser: bool = False,
-) -> QuerySet[Scenario]:
-    """Return the queryset of scenarios visible to ``user_id``.
+def accessible_scenarios_queryset(user: User) -> QuerySet[Scenario]:
+    """Return the queryset of scenarios visible to ``user``.
 
     Port of ``api/catalog_queries.py::accessible_scenarios_query``: a
-    scenario is accessible iff the user owns it, is share-recipient, or
-    is a superuser. ``user_id`` may be a UUID string or an email --
-    both forms are checked against ``Scenario.owner_user_id`` and
-    ``ScenarioShare.user_id`` to mirror the dual-stack identifier shape
-    that lives in the DB until Phase 5 normalizes everything to UUIDs.
+    scenario is accessible iff the user owns it, is a share-recipient, or
+    is a superuser. Post-phase-5 the comparisons are FK-only (no email
+    fallback) -- the dual-stack identifier shape was normalized away by
+    ``catalog/0002_normalize_owner_user_id``.
     """
     qs = Scenario.objects.all()
-    if is_superuser:
+    if user.is_superuser:
         return qs
-    candidates = {value for value in (user_id, email) if value}
-    shared_ids = ScenarioShare.objects.filter(user_id__in=candidates).values_list("scenario__scenario_id", flat=True)
-    return qs.filter(Q(owner_user_id__in=candidates) | Q(scenario_id__in=shared_ids))
+    shared_ids = ScenarioShare.objects.filter(user=user).values_list("scenario__scenario_id", flat=True)
+    return qs.filter(Q(owner=user) | Q(scenario_id__in=shared_ids))
 
 
 def list_accessible_scenarios(
-    user_id: str,
+    user: User,
     *,
-    email: str | None = None,
-    is_superuser: bool = False,
     limit: int = 100,
     offset: int = 0,
 ) -> tuple[list[Scenario], int]:
-    base = accessible_scenarios_queryset(user_id, email=email, is_superuser=is_superuser)
+    base = accessible_scenarios_queryset(user)
     total = base.count()
     rows = list(base.order_by("scenario_id")[offset : offset + limit])
     return rows, total
@@ -453,16 +459,15 @@ def accessible_slots_queryset(
     Port of ``api/catalog_queries.py::accessible_slots_query``: a slot is
     accessible iff the user owns or is shared on its scenario (or is a
     superuser). The optional ``scenario_id`` filter preserves the FastAPI
-    behaviour.
+    behaviour. Post-phase-5: FK-only comparisons.
     """
     qs = Slot.objects.all()
     if scenario_id is not None:
         qs = qs.filter(scenario_id=scenario_id)
     if user.is_superuser:
         return qs
-    candidates = {str(user.id), user.email}
-    shared_ids = ScenarioShare.objects.filter(user_id__in=candidates).values_list("scenario__scenario_id", flat=True)
-    return qs.filter(Q(scenario__owner_user_id__in=candidates) | Q(scenario_id__in=shared_ids))
+    shared_ids = ScenarioShare.objects.filter(user=user).values_list("scenario__scenario_id", flat=True)
+    return qs.filter(Q(scenario__owner=user) | Q(scenario_id__in=shared_ids))
 
 
 def list_accessible_slots(
@@ -499,7 +504,7 @@ def create_owned_slot(*, payload, current_user: User) -> dict[str, Any]:
     # ``config.runtime.slots_file``.
     result = slot_summary(record)
     write_audit(
-        actor_user_id=_actor_id(current_user),
+        actor=current_user,
         action="slot.create",
         target_type="slot",
         target_id=record.slot_id,
@@ -534,7 +539,7 @@ def update_owned_slot(*, slot_id: str, payload, current_user: User) -> dict[str,
     # TODO(phase-13): port sync_slots_file (see create_owned_slot).
     result = slot_summary(record)
     write_audit(
-        actor_user_id=_actor_id(current_user),
+        actor=current_user,
         action="slot.update",
         target_type="slot",
         target_id=record.slot_id,
@@ -553,7 +558,7 @@ def delete_owned_slot(*, slot_id: str, current_user: User) -> dict[str, Any]:
     record.delete()
     # TODO(phase-13): port sync_slots_file (see create_owned_slot).
     write_audit(
-        actor_user_id=_actor_id(current_user),
+        actor=current_user,
         action="slot.delete",
         target_type="slot",
         target_id=slot_id,
@@ -626,7 +631,7 @@ def create_step(
     steps.insert(index, payload.step)
     save_scenario_definition(scenario, definition)
     write_audit(
-        actor_user_id=_actor_id(current_user),
+        actor=current_user,
         action="step.create",
         target_type="scenario",
         target_id=scenario_id,
@@ -656,7 +661,7 @@ def update_step(
     steps[index] = payload.step
     save_scenario_definition(scenario, definition)
     write_audit(
-        actor_user_id=_actor_id(current_user),
+        actor=current_user,
         action="step.update",
         target_type="scenario",
         target_id=scenario_id,
@@ -686,7 +691,7 @@ def delete_step(
     del steps[index]
     save_scenario_definition(scenario, definition)
     write_audit(
-        actor_user_id=_actor_id(current_user),
+        actor=current_user,
         action="step.delete",
         target_type="scenario",
         target_id=scenario_id,
@@ -750,13 +755,11 @@ def build_service_from_db(*, timezone_name: str | None = None) -> SchedulerServi
     return build_runtime_services_from_catalog(config, slots, scenarios)
 
 
-def scenario_ids_for_user(user_id: str, *, email: str | None = None, is_superuser: bool = False) -> set[str]:
+def scenario_ids_for_user(user: User) -> set[str]:
     """Return the set of scenario IDs visible to a user.
 
     Mirrors ``api/catalog.py::scenario_ids_for_user``. The query reuses
     ``accessible_scenarios_queryset`` so the visibility rules stay in a
     single place.
     """
-    return set(
-        accessible_scenarios_queryset(user_id, email=email, is_superuser=is_superuser).values_list("scenario_id", flat=True),
-    )
+    return set(accessible_scenarios_queryset(user).values_list("scenario_id", flat=True))

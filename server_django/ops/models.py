@@ -22,20 +22,32 @@ relevant Alembic revisions for ops tables are:
 - ``20260421_0011_operational_indexes`` — composite
   ``ix_job_events_job_created_at`` and ``ix_execution_history_scenario_executed_at``
 
-``*_user_id`` columns stay ``CharField(max_length=320)`` for now to match the
-existing Alembic schema. Phase 5 promotes them to ``UUIDField`` and then to
-``ForeignKey(User)`` after the data migration.
+After phase 5 (``ops/0002`` + ``ops/0003``):
+
+- ``Job.user`` is ``ForeignKey(User, on_delete=PROTECT)`` (column
+  ``user_id`` preserved).
+- ``AuditEntry.actor`` is ``ForeignKey(User, null=True, on_delete=SET_NULL)``
+  (column ``actor_user_id`` preserved). Nullability flipped on FK promotion
+  so user deletion does not destroy audit history.
+- ``IdempotencyKey.user_id`` is a plain ``UUIDField`` (no FK -- it's an
+  internal cache key whose lifetime should not be tied to user rows).
 """
 
 from __future__ import annotations
 
+from django.conf import settings
 from django.db import models
 
 
 class Job(models.Model):
     job_id = models.CharField(max_length=64, unique=True, db_index=True)
     celery_task_id = models.CharField(max_length=128, null=True, blank=True, db_index=True)
-    user_id = models.CharField(max_length=320, db_index=True)  # Promoted to FK(User) in phase 5 (no data normalization — jobs are always API-created with str(current_user.id))
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="+",
+        db_column="user_id",
+    )
     kind = models.CharField(max_length=64, db_index=True)
     target_id = models.CharField(max_length=128, db_index=True)
     status = models.CharField(max_length=32, db_index=True)
@@ -54,7 +66,7 @@ class Job(models.Model):
         indexes = [
             # From migrations/versions/20260421_0007_query_indexes.py
             models.Index(fields=["status", "updated_at"], name="ix_jobs_status_updated_at"),
-            models.Index(fields=["user_id", "status"], name="ix_jobs_user_status"),
+            models.Index(fields=["user", "status"], name="ix_jobs_user_status"),
         ]
 
     def __str__(self) -> str:
@@ -132,7 +144,13 @@ class GraphNotification(models.Model):
 
 
 class AuditEntry(models.Model):
-    actor_user_id = models.CharField(max_length=320, db_index=True)  # FK(User) + nullable promotion in phase 5
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        db_column="actor_user_id",
+    )
     action = models.CharField(max_length=128, db_index=True)
     target_type = models.CharField(max_length=64, db_index=True)
     target_id = models.CharField(max_length=320, db_index=True)
@@ -196,7 +214,7 @@ class AppSetting(models.Model):
 
 
 class IdempotencyKey(models.Model):
-    user_id = models.CharField(max_length=320, db_index=True)  # internal key; type-flipped to UUIDField in phase 5 (no data normalization needed) but no FK promotion
+    user_id = models.UUIDField(db_column="user_id", db_index=True)
     key = models.CharField(max_length=128, db_index=True)
     request_fingerprint = models.CharField(max_length=128)
     status_code = models.IntegerField(default=200)

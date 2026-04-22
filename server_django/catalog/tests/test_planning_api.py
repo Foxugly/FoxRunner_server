@@ -61,7 +61,7 @@ class _BasePlanningApiTest(TestCase):
         self.admin_token = _login(self.client, "admin@example.com", "password123!")
         self.alice_scenario = Scenario.objects.create(
             scenario_id="sc-alice",
-            owner_user_id=str(self.alice.id),
+            owner=self.alice,
             description="alice scenario",
             definition={"steps": [{"type": "sleep", "seconds": 1}]},
         )
@@ -75,7 +75,7 @@ class _BasePlanningApiTest(TestCase):
         )
         self.bob_scenario = Scenario.objects.create(
             scenario_id="sc-bob",
-            owner_user_id=str(self.bob.id),
+            owner=self.bob,
             description="bob scenario",
             definition={"steps": []},
         )
@@ -193,7 +193,7 @@ class UserSlotsTest(_BasePlanningApiTest):
         for index in range(4):
             scenario = Scenario.objects.create(
                 scenario_id=f"sc-alice-extra-{index}",
-                owner_user_id=str(self.alice.id),
+                owner=self.alice,
                 description="",
                 definition={"steps": []},
             )
@@ -302,7 +302,7 @@ class RunUserScenarioTest(_BasePlanningApiTest):
         # Bob is granted access to Alice's scenario via a share -- he can
         # run it (the visibility check allows shared readers; the engine
         # is mocked so we assert the wiring, not the side effects).
-        ScenarioShare.objects.create(scenario=self.alice_scenario, user_id=str(self.bob.id))
+        ScenarioShare.objects.create(scenario=self.alice_scenario, user=self.bob)
         mock_service = MagicMock()
         mock_service.run_scenario.return_value = 0
         with patch("catalog.api.scenario_services.build_service_from_db", return_value=mock_service):

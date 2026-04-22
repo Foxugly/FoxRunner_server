@@ -3,18 +3,32 @@
 Each field mirrors the SQLAlchemy counterpart in ``api/models.py``. The
 relevant Alembic revisions for catalog tables are ``20260421_0001``
 (initial create + 6 indexes, all auto-derived from ``db_index``/``unique``/FK
-declarations) and ``20260421_0011`` (the ``ix_slots_scenario_enabled``
-composite, which must be declared explicitly in ``Slot.Meta.indexes``).
+declarations), ``20260421_0011`` (the ``ix_slots_scenario_enabled``
+composite, which must be declared explicitly in ``Slot.Meta.indexes``),
+and ``20260422_0012`` (UUID normalization for ``owner_user_id`` /
+``user_id`` -- mirrored on the Django side by ``catalog/0002`` +
+``catalog/0003`` which promote those columns to ``ForeignKey(User)``).
+
+After phase 5 the ``owner_user_id`` / ``user_id`` columns are FK-backed
+UUIDs. The frontend response contract still surfaces them as
+``owner_user_id: str``; serializers cast ``str(scenario.owner_id)`` to
+preserve the API shape.
 """
 
 from __future__ import annotations
 
+from django.conf import settings
 from django.db import models
 
 
 class Scenario(models.Model):
     scenario_id = models.CharField(max_length=128, unique=True, db_index=True)
-    owner_user_id = models.CharField(max_length=320, db_index=True)  # Promoted to FK(User) in phase 5 (CharField -> UUIDField -> ForeignKey)
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="+",
+        db_column="owner_user_id",
+    )
     description = models.TextField(default="", blank=True)
     definition = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -35,12 +49,17 @@ class ScenarioShare(models.Model):
         to_field="scenario_id",
         db_column="scenario_id",
     )
-    user_id = models.CharField(max_length=320, db_index=True)  # Promoted to FK(User) in phase 5 (CharField -> UUIDField -> ForeignKey)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="+",
+        db_column="user_id",
+    )
 
     class Meta:
         db_table = "scenario_shares"
         constraints = [
-            models.UniqueConstraint(fields=["scenario", "user_id"], name="uq_scenario_share_user"),
+            models.UniqueConstraint(fields=["scenario", "user"], name="uq_scenario_share_user"),
         ]
 
 

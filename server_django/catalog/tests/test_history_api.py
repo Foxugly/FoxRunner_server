@@ -56,19 +56,19 @@ class _BaseHistoryApiTest(TestCase):
         # Two scenarios for Alice + one for Bob.
         self.alice_scenario_a = Scenario.objects.create(
             scenario_id="sc-alice-a",
-            owner_user_id=str(self.alice.id),
+            owner=self.alice,
             description="alice A",
             definition={"steps": []},
         )
         self.alice_scenario_b = Scenario.objects.create(
             scenario_id="sc-alice-b",
-            owner_user_id=str(self.alice.id),
+            owner=self.alice,
             description="alice B",
             definition={"steps": []},
         )
         self.bob_scenario = Scenario.objects.create(
             scenario_id="sc-bob",
-            owner_user_id=str(self.bob.id),
+            owner=self.bob,
             description="bob",
             definition={"steps": []},
         )
@@ -162,7 +162,7 @@ class HistoryEndpointTest(_BaseHistoryApiTest):
     def test_history_endpoint_filter_by_scenario_id_shared_visible(self):
         # Bob shares his scenario with Alice -- scenario_id filter on
         # sc-bob now returns 200 with the matching rows.
-        ScenarioShare.objects.create(scenario=self.bob_scenario, user_id=str(self.alice.id))
+        ScenarioShare.objects.create(scenario=self.bob_scenario, user=self.alice)
         self._seed_history(slot_id="s1", scenario_id="sc-bob", execution_id="e1")
         response = self.client.get(
             f"/api/v1/users/{self.alice.id}/history?scenario_id=sc-bob",

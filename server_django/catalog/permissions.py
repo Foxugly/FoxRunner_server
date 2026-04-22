@@ -1,8 +1,9 @@
 """Object-level permission helpers for catalog resources.
 
-Owner identity is stored as either the UUID or the email depending on the
-write path (JSON seed vs API create). Until Phase 5 normalizes everything
-to UUID strings, ownership checks must accept both.
+After phase 5 (UUID normalization + FK promotion), ownership is canonical
+UUID-only. ``Scenario.owner`` is a ``ForeignKey(User)``, so ownership
+checks compare directly on ``scenario.owner_id == user.id`` -- the
+dual-stack UUID-or-email fallback that lived here pre-phase-5 is gone.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from catalog.models import Scenario
 
 
 def _is_scenario_owner(scenario: Scenario, user: User) -> bool:
-    return scenario.owner_user_id in {str(user.id), user.email}
+    return scenario.owner_id == user.id
 
 
 def require_scenario_owner(scenario: Scenario, user: User) -> None:

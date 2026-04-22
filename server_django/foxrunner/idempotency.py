@@ -15,12 +15,18 @@ def _fingerprint(payload: Any) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+def _coerce_uuid(value: str | UUID) -> UUID:
+    """Coerce a UUID-or-string into a UUID for the ``IdempotencyKey.user_id`` UUIDField."""
+    return value if isinstance(value, UUID) else UUID(str(value))
+
+
 def get_idempotent_response(request, *, user_id: str | UUID, payload: Any) -> dict[str, Any] | None:
     """Return the stored response for the (user_id, Idempotency-Key) pair, or None."""
     key = request.headers.get("Idempotency-Key")
     if not key:
         return None
-    record = IdempotencyKey.objects.filter(user_id=str(user_id), key=key).first()
+    user_uuid = _coerce_uuid(user_id)
+    record = IdempotencyKey.objects.filter(user_id=user_uuid, key=key).first()
     if record is None:
         return None
     if record.request_fingerprint != _fingerprint(payload):
@@ -40,19 +46,19 @@ def store_idempotent_response(
     key = request.headers.get("Idempotency-Key")
     if not key:
         return
-    user_id_str = str(user_id)
+    user_uuid = _coerce_uuid(user_id)
     fingerprint = _fingerprint(payload)
     try:
         with transaction.atomic():
             IdempotencyKey.objects.create(
-                user_id=user_id_str,
+                user_id=user_uuid,
                 key=key,
                 request_fingerprint=fingerprint,
                 response=response,
                 status_code=status_code,
             )
     except IntegrityError:
-        existing = IdempotencyKey.objects.filter(user_id=user_id_str, key=key).first()
+        existing = IdempotencyKey.objects.filter(user_id=user_uuid, key=key).first()
         if existing is not None and existing.request_fingerprint != fingerprint:
             raise HttpError(409, "Idempotency-Key reutilisee avec un payload different.") from None
         # else: the concurrent inserter stored the same fingerprint — silent success

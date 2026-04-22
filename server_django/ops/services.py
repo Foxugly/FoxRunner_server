@@ -13,6 +13,7 @@ import pathlib
 from datetime import UTC, datetime
 from typing import Any
 
+from accounts.models import User
 from django.db import transaction
 from django.db.models import QuerySet
 
@@ -21,7 +22,7 @@ from ops.models import AuditEntry, ExecutionHistory
 
 def write_audit(
     *,
-    actor_user_id: str,
+    actor: User | None,
     action: str,
     target_type: str,
     target_id: str,
@@ -34,9 +35,14 @@ def write_audit(
     async only because it shared the ``AsyncSession``. The Django ORM is
     sync and Ninja handlers run in a sync request cycle, so the helper
     drops the ``await`` plumbing.
+
+    Post-phase-5 the actor is stored as a ``ForeignKey(User)`` (column
+    ``actor_user_id`` preserved). Callers pass the ``User`` object; the
+    column may be ``NULL`` (the FK is nullable + ``SET_NULL``) so an
+    explicit ``actor=None`` is allowed for system-generated audit rows.
     """
     return AuditEntry.objects.create(
-        actor_user_id=actor_user_id,
+        actor=actor,
         action=action,
         target_type=target_type,
         target_id=target_id,
@@ -53,10 +59,15 @@ def list_audit(
     target_type: str | None = None,
     target_id: str | None = None,
 ) -> list[AuditEntry]:
-    """Return audit rows matching the optional filters, newest first."""
+    """Return audit rows matching the optional filters, newest first.
+
+    ``actor_user_id`` is the API-shape filter (UUID string); the FK column
+    name remains ``actor_user_id`` so the filter maps to ``actor_id`` on
+    the ORM side.
+    """
     qs = AuditEntry.objects.all().order_by("-id")
     if actor_user_id:
-        qs = qs.filter(actor_user_id=actor_user_id)
+        qs = qs.filter(actor_id=actor_user_id)
     if target_type:
         qs = qs.filter(target_type=target_type)
     if target_id:
@@ -73,7 +84,7 @@ def count_audit(
     """Return the total number of audit rows matching the optional filters."""
     qs = AuditEntry.objects.all()
     if actor_user_id:
-        qs = qs.filter(actor_user_id=actor_user_id)
+        qs = qs.filter(actor_id=actor_user_id)
     if target_type:
         qs = qs.filter(target_type=target_type)
     if target_id:

@@ -71,7 +71,7 @@ class CreateScenarioTest(_BaseScenarioApiTest):
                 action="scenario.create",
                 target_type="scenario",
                 target_id="demo",
-                actor_user_id=str(self.alice.id),
+                actor=self.alice,
             ).exists()
         )
 
@@ -134,7 +134,7 @@ class UpdateScenarioTest(_BaseScenarioApiTest):
         super().setUp()
         self.scenario = Scenario.objects.create(
             scenario_id="s1",
-            owner_user_id=str(self.alice.id),
+            owner=self.alice,
             description="initial",
             definition={"steps": []},
         )
@@ -180,7 +180,7 @@ class UpdateScenarioTest(_BaseScenarioApiTest):
         self.assertEqual(Slot.objects.filter(scenario_id="s1").count(), 0)
 
     def test_patch_scenario_rename_to_existing_id_returns_409(self):
-        Scenario.objects.create(scenario_id="other", owner_user_id=str(self.alice.id))
+        Scenario.objects.create(scenario_id="other", owner=self.alice)
         response = self.client.patch(
             "/api/v1/scenarios/s1",
             data=json.dumps({"scenario_id": "other"}),
@@ -193,7 +193,7 @@ class UpdateScenarioTest(_BaseScenarioApiTest):
 class DeleteScenarioTest(_BaseScenarioApiTest):
     def setUp(self):
         super().setUp()
-        self.scenario = Scenario.objects.create(scenario_id="del", owner_user_id=str(self.alice.id), definition={"steps": []})
+        self.scenario = Scenario.objects.create(scenario_id="del", owner=self.alice, definition={"steps": []})
 
     def test_delete_scenario_as_owner_no_slots(self):
         response = self.client.delete("/api/v1/scenarios/del", **_auth(self.alice_token))
@@ -224,7 +224,7 @@ class DuplicateScenarioTest(_BaseScenarioApiTest):
         super().setUp()
         self.scenario = Scenario.objects.create(
             scenario_id="src",
-            owner_user_id=str(self.alice.id),
+            owner=self.alice,
             description="src description",
             definition={"steps": [{"type": "sleep", "seconds": 1}]},
         )
@@ -244,7 +244,7 @@ class DuplicateScenarioTest(_BaseScenarioApiTest):
         self.assertTrue(AuditEntry.objects.filter(action="scenario.duplicate", target_id="copy").exists())
 
     def test_duplicate_scenario_with_existing_target_returns_409(self):
-        Scenario.objects.create(scenario_id="copy", owner_user_id=str(self.alice.id))
+        Scenario.objects.create(scenario_id="copy", owner=self.alice)
         response = self.client.post(
             "/api/v1/scenarios/src/duplicate?new_scenario_id=copy",
             content_type="application/json",
@@ -256,8 +256,8 @@ class DuplicateScenarioTest(_BaseScenarioApiTest):
 class ListSharesTest(_BaseScenarioApiTest):
     def setUp(self):
         super().setUp()
-        self.scenario = Scenario.objects.create(scenario_id="shared", owner_user_id=str(self.alice.id), definition={"steps": []})
-        ScenarioShare.objects.create(scenario=self.scenario, user_id=str(self.bob.id))
+        self.scenario = Scenario.objects.create(scenario_id="shared", owner=self.alice, definition={"steps": []})
+        ScenarioShare.objects.create(scenario=self.scenario, user=self.bob)
 
     def test_list_shares_as_owner(self):
         response = self.client.get("/api/v1/scenarios/shared/shares", **_auth(self.alice_token))
@@ -283,7 +283,7 @@ class ListSharesTest(_BaseScenarioApiTest):
 class ShareScenarioTest(_BaseScenarioApiTest):
     def setUp(self):
         super().setUp()
-        self.scenario = Scenario.objects.create(scenario_id="s2", owner_user_id=str(self.alice.id), definition={"steps": []})
+        self.scenario = Scenario.objects.create(scenario_id="s2", owner=self.alice, definition={"steps": []})
 
     def test_share_scenario_as_owner_returns_201(self):
         response = self.client.post(
@@ -332,7 +332,7 @@ class ShareScenarioTest(_BaseScenarioApiTest):
     def test_share_scenario_as_shared_user_returns_403(self):
         # Once shared, Bob can read but cannot write -> 403 from
         # require_scenario_owner.
-        ScenarioShare.objects.create(scenario=self.scenario, user_id=str(self.bob.id))
+        ScenarioShare.objects.create(scenario=self.scenario, user=self.bob)
         carol = User.objects.create_user(email="carol2@example.com", password="password123!")
         response = self.client.post(
             "/api/v1/scenarios/s2/shares",
@@ -346,8 +346,8 @@ class ShareScenarioTest(_BaseScenarioApiTest):
 class UnshareScenarioTest(_BaseScenarioApiTest):
     def setUp(self):
         super().setUp()
-        self.scenario = Scenario.objects.create(scenario_id="s3", owner_user_id=str(self.alice.id), definition={"steps": []})
-        ScenarioShare.objects.create(scenario=self.scenario, user_id=str(self.bob.id))
+        self.scenario = Scenario.objects.create(scenario_id="s3", owner=self.alice, definition={"steps": []})
+        ScenarioShare.objects.create(scenario=self.scenario, user=self.bob)
 
     def test_unshare_scenario_as_owner(self):
         response = self.client.delete(
