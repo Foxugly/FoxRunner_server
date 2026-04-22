@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 import subprocess
 import sys
 from pathlib import Path
@@ -13,7 +12,6 @@ CHECKS = (
 
 REQUIRED_FILES = (
     ".env.example",
-    "alembic.ini",
     "openapi.json",
     "CHANGELOG.md",
     "requirements.txt",
@@ -21,6 +19,7 @@ REQUIRED_FILES = (
     "pyproject.toml",
     "Dockerfile",
     "docker-compose.yml",
+    "manage.py",
 )
 
 # Minimum supported runtime — aligned with pyproject.toml target-version
@@ -65,44 +64,21 @@ def _check_python_version() -> int:
     return 0
 
 
-def _check_migration_chain() -> int:
-    versions_dir = Path("migrations/versions")
-    migration_files = sorted(versions_dir.glob("*.py")) if versions_dir.exists() else []
-    if not migration_files:
-        print("missing:migrations")
-        return 1
-
-    revision_re = re.compile(r"^revision(?:\s*:\s*str)?\s*=\s*['\"]([^'\"]+)['\"]", re.MULTILINE)
-    down_re = re.compile(r"^down_revision(?:\s*:\s*[^=]+)?\s*=\s*(?:['\"]([^'\"]*)['\"]|(None))", re.MULTILINE)
-
-    nodes: dict[str, str | None] = {}
-    for path in migration_files:
-        text = path.read_text(encoding="utf-8")
-        revision_match = revision_re.search(text)
-        down_match = down_re.search(text)
-        if revision_match is None or down_match is None:
-            print(f"migration-parse:failed {path.name}")
-            return 1
-        revision = revision_match.group(1)
-        down = down_match.group(1) if down_match.group(1) else None
-        nodes[revision] = down
-
-    roots = [rev for rev, down in nodes.items() if down is None]
-    heads = {rev for rev in nodes if rev not in {down for down in nodes.values() if down}}
-    dangling = [rev for rev, down in nodes.items() if down is not None and down not in nodes]
-
+def _check_django_migrations() -> int:
+    apps = ("accounts", "catalog", "ops")
     failures = 0
-    if len(roots) != 1:
-        print(f"migration-roots:failed count={len(roots)} expected=1")
-        failures += 1
-    if len(heads) != 1:
-        print(f"migration-heads:failed count={len(heads)} heads={sorted(heads)}")
-        failures += 1
-    if dangling:
-        print(f"migration-dangling:failed {dangling}")
-        failures += 1
-    if not failures:
-        print(f"migration-chain:ok revisions={len(nodes)}")
+    for app in apps:
+        versions_dir = Path(app) / "migrations"
+        if not versions_dir.exists():
+            print(f"missing:{app}/migrations")
+            failures += 1
+            continue
+        migration_files = sorted(p for p in versions_dir.glob("*.py") if p.name != "__init__.py")
+        if not migration_files:
+            print(f"empty:{app}/migrations")
+            failures += 1
+            continue
+        print(f"django-migrations:{app}:ok files={len(migration_files)}")
     return failures
 
 
@@ -111,7 +87,7 @@ def main() -> int:
     failures += _run_subprocess_checks()
     failures += _check_required_files()
     failures += _check_python_version()
-    failures += _check_migration_chain()
+    failures += _check_django_migrations()
     return 1 if failures else 0
 
 

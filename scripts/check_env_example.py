@@ -1,15 +1,13 @@
 """Check that every os.getenv(...) call across the Python tree is mirrored
 in .env.example.
 
-Phase 12.5 update: now scans ``server_django/`` in addition to the
-historical ``api/app/scripts`` so the new Django backend's env vars are
-audited too. Legacy FastAPI env names (``AUTH_SECRET``,
-``AUTH_DATABASE_URL``, ``API_*``) are intentionally absent from
-``.env.example`` -- Phase 9 renamed them to the Django-style spellings
-(``DJANGO_SECRET_KEY``, ``DATABASE_URL``, ``CORS_ALLOWED_ORIGINS``) and
-``server_django/foxrunner/settings.py`` accepts both as fallback during
-the dual-stack window. They live in the ``LEGACY_ALIASES`` set so the
-checker treats them as documented under their new names.
+Walks the Django apps (``accounts``, ``catalog``, ``ops``, ``foxrunner``),
+the shared engine helpers (``app``, ``scenarios``, ``scheduler``,
+``state``, ``operations``, ``network``, ``cli``) and ``scripts``.
+
+Legacy FastAPI env names (``AUTH_SECRET``, ``AUTH_DATABASE_URL``,
+``API_*``) live in ``LEGACY_ALIASES`` -- ``foxrunner/settings.py`` still
+accepts them as fallback so existing operator env files keep working.
 """
 
 from __future__ import annotations
@@ -55,8 +53,11 @@ LEGACY_ALIASES: dict[str, str] = {
 
 def main() -> int:
     used = set(REQUIRED)
-    for folder in ("api", "app", "scripts", "server_django"):
-        for path in (ROOT / folder).rglob("*.py"):
+    for folder in ("accounts", "catalog", "ops", "foxrunner", "app", "cli", "network", "operations", "scenarios", "scheduler", "state", "scripts"):
+        folder_path = ROOT / folder
+        if not folder_path.exists():
+            continue
+        for path in folder_path.rglob("*.py"):
             used.update(ENV_PATTERN.findall(path.read_text(encoding="utf-8")))
     used -= IGNORED
     example_keys = set()

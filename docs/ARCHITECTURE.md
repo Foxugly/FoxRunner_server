@@ -76,7 +76,7 @@ Database and Redis failures mark readiness as degraded. Celery without workers i
 
 ## Backend runtime (ADR 007)
 
-- Django 5 + Django Ninja under `server_django/`. The project is structured into three apps:
+- Django 5 + Django Ninja at the repo root. The project is structured into three apps:
   - `accounts` — custom User model (UUID PK, email login), djoser mounting, Ninja wrappers for the login/logout/reset contract the Angular client depends on, management command `bootstrap_admin`.
   - `catalog` — Scenario, Slot, ScenarioShare, step-collection endpoints, planning, history.
   - `ops` — Job + JobEvent (Celery-backed), AuditEntry, AppSetting, IdempotencyKey, Microsoft Graph subscriptions + notifications, monitoring/metrics, artifacts.

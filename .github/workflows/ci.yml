@@ -25,50 +25,38 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.lock
       - name: Compile
-        run: python -m compileall api app cli migrations network operations scenarios scheduler scripts state tests server_django
+        run: python -m compileall accounts app catalog cli foxrunner network operations ops scenarios scheduler scripts state tests
       - name: Lint
         run: ruff check .
-      - name: Coverage (FastAPI legacy)
+      - name: CLI engine tests (framework-agnostic)
         run: |
           coverage run -m unittest
           coverage report --fail-under=84
-      - name: Alembic migration cycle
-        env:
-          AUTH_DATABASE_URL: sqlite+aiosqlite:///.runtime/ci.db
-        run: |
-          alembic upgrade head
-          alembic downgrade base
-          alembic upgrade head
-          # TODO: once api/models.py declares every Index() from the migration
-          # chain (including the ones added by 0007 and 0011) and picks up the
-          # GUID type for user.id, enable `alembic check` here to catch
-          # further schema drift at PR time.
       - name: Django migrate + tests
-        working-directory: server_django
         env:
-          DATABASE_URL: sqlite:///../.runtime/django-ci.db
+          DATABASE_URL: sqlite:///.runtime/django-ci.db
           DJANGO_SECRET_KEY: change-me-before-production-32-bytes-minimum-ci
         run: |
           python manage.py migrate
           python manage.py makemigrations --check --dry-run
           python manage.py test catalog ops accounts foxrunner --parallel=1
       - name: Django coverage
-        working-directory: server_django
         env:
-          DATABASE_URL: sqlite:///../.runtime/django-coverage.db
+          DATABASE_URL: sqlite:///.runtime/django-coverage.db
           DJANGO_SECRET_KEY: change-me-before-production-32-bytes-minimum-ci
         run: |
           coverage run --source=accounts,catalog,ops,foxrunner manage.py test catalog ops accounts foxrunner --parallel=1
           coverage report --fail-under=84
-      - name: Export OpenAPI (FastAPI)
-        run: python scripts/export_openapi.py
-      - name: Check OpenAPI (FastAPI)
-        run: python scripts/check_openapi.py
-      - name: Export OpenAPI (Django)
+      - name: Export OpenAPI
         env:
           DATABASE_URL: sqlite:///.runtime/openapi-export.db
           DJANGO_SECRET_KEY: change-me-before-production-32-bytes-minimum-ci
-        run: python server_django/scripts/export_openapi.py
+        run: python scripts/export_openapi.py
+      - name: Check OpenAPI
+        env:
+          DATABASE_URL: sqlite:///.runtime/openapi-check.db
+          DJANGO_SECRET_KEY: change-me-before-production-32-bytes-minimum-ci
+        run: python scripts/check_openapi.py
       - name: Check docs
         run: python scripts/check_docs.py
       - name: Check .env.example
@@ -81,7 +69,7 @@ jobs:
           POSTGRES_DB: ci
           POSTGRES_USER: ci
           POSTGRES_PASSWORD: ci
-          AUTH_SECRET: change-me-before-production-32-bytes-minimum-ci
+          DJANGO_SECRET_KEY: change-me-before-production-32-bytes-minimum-ci
         run: docker compose config
       - name: Docker build
         if: matrix.os == 'ubuntu-latest'

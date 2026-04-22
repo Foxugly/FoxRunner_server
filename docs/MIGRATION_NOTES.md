@@ -21,7 +21,7 @@ These are documented here so a reviewer doesn't "fix" them accidentally in a fut
 
 ## Ruff + migrations
 
-- Auto-generated Django migration files are excluded via `[tool.ruff] extend-exclude = ["server_django/**/migrations"]` in `pyproject.toml`. Keeps `makemigrations` output lint-clean without manual reformatting.
+- Auto-generated Django migration files are excluded via `[tool.ruff] extend-exclude = ["**/migrations"]` in `pyproject.toml`. Keeps `makemigrations` output lint-clean without manual reformatting.
 - `SILENCED_SYSTEM_CHECKS = ["models.E034"]` in `settings.py` allows preserving Alembic-era index names longer than 30 chars (Django's E034 is a legacy Oracle limit).
 
 ## Index parity
