@@ -266,7 +266,6 @@ def _prune_artifacts_files(older_than_days: int) -> int:
     import time
 
     from app.config import load_config
-
     from ops.services import ARTIFACT_KINDS
 
     artifacts_dir = load_config().runtime.artifacts_dir

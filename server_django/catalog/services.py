@@ -99,9 +99,7 @@ def _build_scenarios_document(scenarios_file: Path) -> dict[str, Any]:
     document = _load_json_dict(scenarios_file)
     document.setdefault("schema_version", 1)
     document.setdefault("data", {})
-    document["scenarios"] = {
-        record.scenario_id: record.definition for record in Scenario.objects.all().order_by("scenario_id")
-    }
+    document["scenarios"] = {record.scenario_id: record.definition for record in Scenario.objects.all().order_by("scenario_id")}
     return document
 
 
