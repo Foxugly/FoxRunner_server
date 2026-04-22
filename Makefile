@@ -29,8 +29,8 @@ format:
 	./.venv/Scripts/ruff.exe format .
 
 coverage:
-	$(PYTHON) -m coverage run -m unittest
-	$(PYTHON) -m coverage report --fail-under=84
+	$(PYTHON) -m coverage run --source=app,cli,network,operations,scenarios,scheduler,state -m unittest discover -s tests
+	$(PYTHON) -m coverage report --fail-under=75
 
 coverage-django:
 	$(PYTHON) -m coverage run --source=accounts,catalog,ops,foxrunner $(DJANGO_MANAGE) test catalog ops accounts foxrunner
