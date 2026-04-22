@@ -169,3 +169,23 @@ class SlotPage(Schema):
     total: int
     limit: int
     offset: int
+
+
+# --------------------------------------------------------------------------
+# Step collections (Phase 4.5). Mirrors ``StepPayload`` /
+# ``StepMutationPayload`` / ``StepDeletePayload`` from ``api/schemas.py``.
+# --------------------------------------------------------------------------
+
+
+class StepIn(Schema):
+    step: dict[str, Any]
+
+
+class StepMutationOut(Schema):
+    index: int
+    step: dict[str, Any]
+
+
+class StepDeleteOut(Schema):
+    index: int
+    deleted: dict[str, Any]

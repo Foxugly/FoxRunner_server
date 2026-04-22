@@ -486,3 +486,136 @@ def delete_owned_slot(*, slot_id: str, current_user: User) -> dict[str, Any]:
         before=before,
     )
     return {"deleted": slot_id}
+
+
+# --------------------------------------------------------------------------
+# Step collections (Phase 4.5). Ports the helpers from ``api/catalog.py``
+# (``ensure_step_collection``, ``step_collection``, ``mutable_step_collection``,
+# ``step_at``) and the three mutation services from ``api/services/steps.py``
+# (``create_step``, ``update_step``, ``delete_step``).
+# --------------------------------------------------------------------------
+
+
+def ensure_step_collection(collection: str) -> None:
+    """Reject collection names not in the canonical set (404 like FastAPI)."""
+    if collection not in STEP_COLLECTIONS:
+        raise HttpError(404, "Collection d'etapes introuvable.")
+
+
+def step_collection_view(definition: dict[str, Any], collection: str) -> list[dict[str, Any]]:
+    """Read-only access to a step collection. 500 if the JSON shape is wrong."""
+    steps = definition.get(collection, [])
+    if not isinstance(steps, list):
+        raise HttpError(500, f"Collection invalide: {collection}")
+    return steps
+
+
+def mutable_step_collection(definition: dict[str, Any], collection: str) -> list[dict[str, Any]]:
+    """Return the collection list, creating it as an empty array if absent."""
+    if collection not in definition:
+        definition[collection] = []
+    return step_collection_view(definition, collection)
+
+
+def step_at(steps: list[dict[str, Any]], index: int) -> dict[str, Any]:
+    """Bounds-checked accessor (404 for out-of-range, mirrors FastAPI)."""
+    if index < 0 or index >= len(steps):
+        raise HttpError(404, "Etape introuvable.")
+    step = steps[index]
+    if not isinstance(step, dict):
+        raise HttpError(500, "Etape invalide.")
+    return step
+
+
+@transaction.atomic
+def create_step(
+    *,
+    user_id: str,
+    scenario_id: str,
+    collection: str,
+    payload,
+    insert_at: int | None,
+    current_user: User,
+) -> dict[str, Any]:
+    """Insert a step at ``insert_at`` (clamped to len) or append by default.
+
+    Owner-only. Routed through ``save_scenario_definition`` so the
+    per-scenario lock serializes the read-modify-write sequence.
+    """
+    require_user_scope(user_id, current_user)
+    ensure_step_collection(collection)
+    scenario = get_scenario_for_user(scenario_id, current_user)
+    require_scenario_owner(scenario, current_user)
+    definition = dict(scenario.definition or {})
+    steps = mutable_step_collection(definition, collection)
+    index = len(steps) if insert_at is None else min(insert_at, len(steps))
+    steps.insert(index, payload.step)
+    save_scenario_definition(scenario, definition)
+    write_audit(
+        actor_user_id=_actor_id(current_user),
+        action="step.create",
+        target_type="scenario",
+        target_id=scenario_id,
+        after={"collection": collection, "index": index, "step": payload.step},
+    )
+    return {"index": index, "step": payload.step}
+
+
+@transaction.atomic
+def update_step(
+    *,
+    user_id: str,
+    scenario_id: str,
+    collection: str,
+    index: int,
+    payload,
+    current_user: User,
+) -> dict[str, Any]:
+    """Replace the step at ``index``. Owner-only. 404 on out-of-range."""
+    require_user_scope(user_id, current_user)
+    ensure_step_collection(collection)
+    scenario = get_scenario_for_user(scenario_id, current_user)
+    require_scenario_owner(scenario, current_user)
+    definition = dict(scenario.definition or {})
+    steps = mutable_step_collection(definition, collection)
+    before = step_at(steps, index)
+    steps[index] = payload.step
+    save_scenario_definition(scenario, definition)
+    write_audit(
+        actor_user_id=_actor_id(current_user),
+        action="step.update",
+        target_type="scenario",
+        target_id=scenario_id,
+        before={"collection": collection, "index": index, "step": before},
+        after={"collection": collection, "index": index, "step": payload.step},
+    )
+    return {"index": index, "step": payload.step}
+
+
+@transaction.atomic
+def delete_step(
+    *,
+    user_id: str,
+    scenario_id: str,
+    collection: str,
+    index: int,
+    current_user: User,
+) -> dict[str, Any]:
+    """Remove the step at ``index``. Owner-only. 404 on out-of-range."""
+    require_user_scope(user_id, current_user)
+    ensure_step_collection(collection)
+    scenario = get_scenario_for_user(scenario_id, current_user)
+    require_scenario_owner(scenario, current_user)
+    definition = dict(scenario.definition or {})
+    steps = mutable_step_collection(definition, collection)
+    deleted = step_at(steps, index)
+    del steps[index]
+    save_scenario_definition(scenario, definition)
+    write_audit(
+        actor_user_id=_actor_id(current_user),
+        action="step.delete",
+        target_type="scenario",
+        target_id=scenario_id,
+        before={"collection": collection, "index": index, "step": deleted},
+    )
+    return {"index": index, "deleted": deleted}

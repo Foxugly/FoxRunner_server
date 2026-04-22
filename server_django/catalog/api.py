@@ -7,6 +7,9 @@ behavior.
 
 from __future__ import annotations
 
+from typing import Any
+
+from accounts.permissions import require_user_scope
 from foxrunner.idempotency import get_idempotent_response, store_idempotent_response
 from ninja import Query, Router
 
@@ -23,6 +26,9 @@ from catalog.schemas import (
     SlotOut,
     SlotPage,
     SlotPatchIn,
+    StepDeleteOut,
+    StepIn,
+    StepMutationOut,
 )
 
 router = Router(tags=["scenarios"])
@@ -196,5 +202,114 @@ def update_slot_endpoint(request, slot_id: str, payload: SlotPatchIn):
 def delete_slot_endpoint(request, slot_id: str):
     return scenario_services.delete_owned_slot(
         slot_id=slot_id,
+        current_user=request.auth,
+    )
+
+
+# --------------------------------------------------------------------------
+# Step collections (Phase 4.5). Six endpoints under
+# /api/v1/users/{user_id}/scenarios/{scenario_id}/. Read endpoints accept
+# owner OR shared visibility; mutations require owner. ``{user_id}`` accepts
+# UUID or email via ``require_user_scope``.
+#
+# Quirks preserved verbatim:
+#   * GET on a collection returns the RAW array (no envelope).
+#   * GET on the parent returns ALL 5 collections in alphabetical order.
+#   * ``insert_at`` is clamped to ``len(steps)``; negative values are rejected
+#     by Query(ge=0) (-> 422).
+# --------------------------------------------------------------------------
+
+
+@router.get("/users/{user_id}/scenarios/{scenario_id}/step-collections", tags=["steps"])
+def list_step_collections_endpoint(request, user_id: str, scenario_id: str) -> dict[str, list[dict[str, Any]]]:
+    current_user = request.auth
+    require_user_scope(user_id, current_user)
+    scenario = scenario_services.get_scenario_for_user(scenario_id, current_user)
+    definition = scenario.definition or {}
+    return {collection: scenario_services.step_collection_view(definition, collection) for collection in sorted(scenario_services.STEP_COLLECTIONS)}
+
+
+@router.get("/users/{user_id}/scenarios/{scenario_id}/step-collections/{collection}", tags=["steps"])
+def list_steps_endpoint(request, user_id: str, scenario_id: str, collection: str) -> list[dict[str, Any]]:
+    current_user = request.auth
+    require_user_scope(user_id, current_user)
+    scenario_services.ensure_step_collection(collection)
+    scenario = scenario_services.get_scenario_for_user(scenario_id, current_user)
+    return scenario_services.step_collection_view(scenario.definition or {}, collection)
+
+
+@router.get("/users/{user_id}/scenarios/{scenario_id}/step-collections/{collection}/{index}", tags=["steps"])
+def get_step_endpoint(request, user_id: str, scenario_id: str, collection: str, index: int) -> dict[str, Any]:
+    current_user = request.auth
+    require_user_scope(user_id, current_user)
+    scenario_services.ensure_step_collection(collection)
+    scenario = scenario_services.get_scenario_for_user(scenario_id, current_user)
+    return scenario_services.step_at(scenario_services.step_collection_view(scenario.definition or {}, collection), index)
+
+
+@router.post(
+    "/users/{user_id}/scenarios/{scenario_id}/step-collections/{collection}",
+    response={201: StepMutationOut},
+    tags=["steps"],
+)
+def create_step_endpoint(
+    request,
+    user_id: str,
+    scenario_id: str,
+    collection: str,
+    payload: StepIn,
+    insert_at: int | None = Query(default=None, ge=0),
+):
+    result = scenario_services.create_step(
+        user_id=user_id,
+        scenario_id=scenario_id,
+        collection=collection,
+        payload=payload,
+        insert_at=insert_at,
+        current_user=request.auth,
+    )
+    return 201, result
+
+
+@router.put(
+    "/users/{user_id}/scenarios/{scenario_id}/step-collections/{collection}/{index}",
+    response=StepMutationOut,
+    tags=["steps"],
+)
+def update_step_endpoint(
+    request,
+    user_id: str,
+    scenario_id: str,
+    collection: str,
+    index: int,
+    payload: StepIn,
+):
+    return scenario_services.update_step(
+        user_id=user_id,
+        scenario_id=scenario_id,
+        collection=collection,
+        index=index,
+        payload=payload,
+        current_user=request.auth,
+    )
+
+
+@router.delete(
+    "/users/{user_id}/scenarios/{scenario_id}/step-collections/{collection}/{index}",
+    response=StepDeleteOut,
+    tags=["steps"],
+)
+def delete_step_endpoint(
+    request,
+    user_id: str,
+    scenario_id: str,
+    collection: str,
+    index: int,
+):
+    return scenario_services.delete_step(
+        user_id=user_id,
+        scenario_id=scenario_id,
+        collection=collection,
+        index=index,
         current_user=request.auth,
     )
