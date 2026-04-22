@@ -32,20 +32,6 @@ from __future__ import annotations
 from django.db import models
 
 
-class _LongIndex(models.Index):
-    """``models.Index`` with the 30-char name cap relaxed.
-
-    Django enforces a 30-char ``max_name_length`` on ``Index`` for legacy
-    Oracle compatibility (``models.E034``). Alembic-created indexes such as
-    ``ix_execution_history_scenario_executed_at`` (41 chars) exceed that
-    limit. Postgres and SQLite — the only backends FoxRunner targets — both
-    accept arbitrarily long identifiers, so we lift the cap to keep the
-    Django ORM index name aligned with the Alembic-created index name.
-    """
-
-    max_name_length = 64
-
-
 class Job(models.Model):
     job_id = models.CharField(max_length=64, unique=True, db_index=True)
     celery_task_id = models.CharField(max_length=128, null=True, blank=True, db_index=True)
@@ -139,8 +125,7 @@ class GraphNotification(models.Model):
 
 
 class AuditEntry(models.Model):
-    # Promoted to FK(User) in phase 5 (CharField -> UUIDField -> ForeignKey); nullable to allow system-emitted entries after promotion
-    actor_user_id = models.CharField(max_length=320, null=True, blank=True, db_index=True)
+    actor_user_id = models.CharField(max_length=320, db_index=True)  # FK(User) + nullable promotion in phase 5
     action = models.CharField(max_length=128, db_index=True)
     target_type = models.CharField(max_length=64, db_index=True)
     target_id = models.CharField(max_length=320, db_index=True)
@@ -175,7 +160,7 @@ class ExecutionHistory(models.Model):
         ]
         indexes = [
             # From migrations/versions/20260421_0011_operational_indexes.py
-            _LongIndex(
+            models.Index(
                 fields=["scenario_id", "executed_at"],
                 name="ix_execution_history_scenario_executed_at",
             ),

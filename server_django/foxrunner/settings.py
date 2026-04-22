@@ -42,6 +42,12 @@ if APP_ENV in {"production", "prod"}:
 
 ALLOWED_HOSTS = [host.strip() for host in os.getenv("DJANGO_ALLOWED_HOSTS", "*").split(",") if host.strip()]
 
+# Suppress models.E034 (constraint/index name length > 30): a legacy Oracle limit.
+# We intentionally preserve the Alembic-era index names (e.g. `ix_execution_history_scenario_executed_at`,
+# 41 chars) so the schema stays diff-free against the existing PostgreSQL/SQLite tables.
+# PostgreSQL allows up to 63 chars; SQLite is unlimited. Oracle is not a target.
+SILENCED_SYSTEM_CHECKS = ["models.E034"]
+
 
 # --- Applications -------------------------------------------------------
 
