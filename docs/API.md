@@ -9,13 +9,23 @@ The documented public API base path is `/api/v1`. Endpoint bullets below are rel
 
 ## Auth
 
-- `POST /api/v1/auth/register`
-- `POST /api/v1/auth/jwt/login`
-- `POST /api/v1/auth/jwt/logout`
-- `POST /api/v1/auth/forgot-password`
-- `POST /api/v1/auth/reset-password`
-- `GET /api/v1/users/me`
-- `PATCH /api/v1/users/me`
+### Ninja wrappers (frontend contract)
+
+- `POST /api/v1/auth/jwt/login` — form-urlencoded `username` + `password`, returns `{access_token, token_type: "bearer"}`.
+- `POST /api/v1/auth/jwt/logout` — returns `{status: "ok"}`.
+- `POST /api/v1/auth/forgot-password` — JSON `{email}`, returns 202 `{status: "queued"}`.
+- `POST /api/v1/auth/reset-password` — JSON `{token, password}`.
+- `GET /api/v1/users/me`, `PATCH /api/v1/users/me`.
+
+### djoser (direct)
+
+- `POST /api/v1/auth/users/` — register.
+- `POST /api/v1/auth/jwt/create/` — JSON login.
+- `POST /api/v1/auth/jwt/refresh/` — refresh token.
+- `POST /api/v1/auth/jwt/verify/`.
+- `POST /api/v1/auth/users/reset_password/`, `/reset_password_confirm/`.
+
+Non-auth endpoints are unchanged from the FastAPI-era contract — see the rest of this doc for the catalog/jobs/admin/graph endpoints.
 
 Protected routes require:
 

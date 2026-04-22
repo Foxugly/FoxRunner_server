@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.2.0 — Django backend
+
+### Backend
+
+- Replaced the FastAPI backend with Django 5 + Django Ninja under the same `/api/v1` contract (ADR 007).
+- Auth via djoser + simple-jwt; `POST /api/v1/auth/jwt/login` continues to accept form-urlencoded credentials and returns `{access_token, token_type}`. Logout is a no-op matching FastAPI bearer-transport semantics.
+- `owner_user_id`/`actor_user_id`/`user_id` columns normalized from email strings to UUID strings, then promoted to `ForeignKey(User)` via `catalog/0003_owner_fk_promotion` and `ops/0003_user_fk_promotion`. The FastAPI dual email/UUID ownership match is gone; API responses still surface `owner_user_id: str` to preserve the frontend contract.
+- Celery tasks rewritten on top of the sync Django ORM (`run_scenario_job` full; Graph renewal and retention are stub handlers during the dual-stack window and promoted in Phase 12/13 before the swap).
+- Microsoft Graph `clientState` validation ported byte-for-byte: per-subscription secret OR global `GRAPH_WEBHOOK_CLIENT_STATE` fallback; production rejects deliveries when both are empty.
+- Rate limiter ported to a Redis sliding-window via `django_redis` with an in-process fallback.
+- Payload size enforced via Django's `DATA_UPLOAD_MAX_MEMORY_SIZE` plus a middleware rendering the existing `{code: payload_too_large, ...}` envelope.
+- Security headers (`X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`) + `X-Request-ID` propagation preserved.
+
+### Infrastructure
+
+- `manage.py` replaces `uvicorn`/`alembic` invocations across docs and CI.
+- Tests run via `python manage.py test --parallel`; coverage floor stays at 84 % (currently at 96 %).
+- New env var names: `DATABASE_URL`, `DJANGO_SECRET_KEY`, `CORS_ALLOWED_ORIGINS`. Removed: `API_CREATE_TABLES_ON_STARTUP`, `API_ENABLE_LEGACY_ROUTES`. Legacy names remain accepted during the dual-stack window.
+- `scripts/bootstrap_admin.py` replaced by `python manage.py bootstrap_admin --email …`. Password still read from `BOOTSTRAP_PASSWORD` env or interactive prompt; never accepted as a CLI flag.
+
+### Known gaps (closed in Phase 13 swap)
+
+- `renew_graph_subscriptions_task` and `prune_retention_task` remain stubs in the Django tree; Celery beat still points at the FastAPI equivalents during the dual-stack window.
+- `openapi.django.json` is the Ninja-side contract; `openapi.json` remains the FastAPI contract until the swap.
+- Scenarios/slots JSON-file sync to `config/*.json` (CLI-compat, ADR 004) is handled by the FastAPI app during dual-stack; Django mutations currently write only to the DB. The file sync lands in Phase 13.
+
 ## Unreleased
 
 ### Security

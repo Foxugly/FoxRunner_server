@@ -1,6 +1,16 @@
 # Operations
 
+> Dual-stack note (Phases 9–12): the Django backend runs on port **8001** while the FastAPI backend keeps port **8000**. Phase 13 deletes `api/` and the Django app moves to port 8000.
+
 ## Local API
+
+Django (new, default starting in Phase 13):
+
+```powershell
+.\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8001
+```
+
+FastAPI (legacy, removed in Phase 13):
 
 ```powershell
 .\.venv\Scripts\uvicorn.exe api.main:app --reload
@@ -23,12 +33,20 @@ AUTH_DATABASE_URL=postgresql+asyncpg://user:password@host:5432/smiley
 Run migrations:
 
 ```powershell
+# Django (new)
+.\.venv\Scripts\python.exe manage.py migrate
+
+# FastAPI (legacy, removed in Phase 13)
 .\.venv\Scripts\alembic.exe upgrade head
 ```
 
 Check migration state:
 
 ```powershell
+# Django
+.\.venv\Scripts\python.exe manage.py showmigrations
+
+# FastAPI
 .\.venv\Scripts\alembic.exe current
 .\.venv\Scripts\alembic.exe history
 ```
@@ -36,6 +54,10 @@ Check migration state:
 Create a new migration:
 
 ```powershell
+# Django
+.\.venv\Scripts\python.exe manage.py makemigrations
+
+# FastAPI
 .\.venv\Scripts\alembic.exe revision --autogenerate -m "message"
 ```
 
@@ -44,8 +66,10 @@ Create a new migration:
 Full local reset with SQLite:
 
 ```powershell
-Stop-Process -Name uvicorn,celery -ErrorAction SilentlyContinue
+Stop-Process -Name uvicorn,python,celery -ErrorAction SilentlyContinue
 Remove-Item .runtime\users.db -ErrorAction SilentlyContinue
+.\.venv\Scripts\python.exe manage.py migrate    # Django
+# or, for the legacy FastAPI stack:
 .\.venv\Scripts\alembic.exe upgrade head
 ```
 
@@ -59,6 +83,10 @@ config/slots.json
 The API startup is:
 
 ```powershell
+# Django (port 8001 during dual-stack)
+.\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8001
+
+# FastAPI (port 8000, legacy)
 .\.venv\Scripts\uvicorn.exe api.main:app --reload
 ```
 
@@ -227,8 +255,10 @@ Copy-Item .runtime\users.db ".runtime\backups\users-$(Get-Date -Format yyyyMMdd-
 SQLite restore:
 
 ```powershell
-Stop-Process -Name uvicorn,celery -ErrorAction SilentlyContinue
+Stop-Process -Name uvicorn,python,celery -ErrorAction SilentlyContinue
 Copy-Item .runtime\backups\users-YYYYMMDD-HHMMSS.db .runtime\users.db -Force
+.\.venv\Scripts\python.exe manage.py migrate    # Django
+# or, legacy FastAPI:
 .\.venv\Scripts\alembic.exe upgrade head
 ```
 
@@ -242,6 +272,8 @@ PostgreSQL restore:
 
 ```bash
 psql "$DATABASE_URL" < backup.sql
+python manage.py migrate    # Django
+# or, legacy:
 alembic upgrade head
 ```
 
@@ -297,6 +329,16 @@ The database is now the source of truth at runtime. JSON files remain compatibil
 4. Use `POST /admin/import?dry_run=true` before replacing catalog data from an external document.
 
 ## Recommended Local Flow
+
+Django (default starting in Phase 13):
+
+```powershell
+.\.venv\Scripts\python.exe manage.py migrate
+.\.venv\Scripts\python.exe manage.py test
+.\.venv\Scripts\python.exe manage.py runserver 127.0.0.1:8001
+```
+
+FastAPI (legacy, still primary during dual-stack):
 
 ```powershell
 .\.venv\Scripts\alembic.exe upgrade head
