@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import threading
 from collections import defaultdict
-from typing import Any
+from dataclasses import replace
+from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 from accounts.models import User
 from accounts.permissions import require_user_scope
@@ -20,9 +22,14 @@ from ninja.errors import HttpError
 from ops.services import write_audit
 
 from app.config import load_config
+from app.main import build_runtime_services_from_catalog
 from catalog.models import Scenario, ScenarioShare, Slot
 from catalog.permissions import _is_scenario_owner, require_scenario_owner, scenario_role
-from scenarios.loader import load_scenario_data
+from scenarios.loader import ScenarioDefinition, build_scenarios_from_map, build_slots_from_items, load_scenario_data
+from scheduler.model import TimeSlot
+
+if TYPE_CHECKING:
+    from scheduler.service import SchedulerService
 
 STEP_COLLECTIONS = frozenset({"before_steps", "steps", "on_success", "on_failure", "finally_steps"})
 
@@ -686,3 +693,70 @@ def delete_step(
         before={"collection": collection, "index": index, "step": deleted},
     )
     return {"index": index, "deleted": deleted}
+
+
+# --------------------------------------------------------------------------
+# Scheduler bridge (Phase 4.7). Sync ports of
+# ``api/catalog.py::load_scheduler_catalog`` and
+# ``api/dependencies.py::build_service_from_db``. The DB stays the source
+# of truth; the JSON catalog file is only consulted via
+# ``app.main.build_runtime_services_from_catalog`` for the auxiliary
+# pushover/network metadata (``scenarios.loader.load_scenario_data``).
+# --------------------------------------------------------------------------
+
+
+def load_scheduler_catalog() -> tuple[tuple[TimeSlot, ...], dict[str, ScenarioDefinition]]:
+    """Build the scheduler-friendly ``(slots, scenarios)`` tuple from the ORM.
+
+    Sync mirror of ``api/catalog.py::load_scheduler_catalog``. Only
+    enabled slots are returned -- disabled rows must not appear in the
+    runtime catalog (parity with the FastAPI behaviour).
+    """
+    scenario_records = list(Scenario.objects.order_by("scenario_id"))
+    slot_records = list(Slot.objects.filter(enabled=True).order_by("slot_id"))
+    scenarios = build_scenarios_from_map(
+        {record.scenario_id: record.definition for record in scenario_records},
+        "database scenarios",
+    )
+    slots = build_slots_from_items(
+        [
+            {
+                "id": record.slot_id,
+                "days": record.days,
+                "start": record.start,
+                "end": record.end,
+                "scenario": record.scenario_id,
+            }
+            for record in slot_records
+        ],
+        "database slots",
+    )
+    return slots, scenarios
+
+
+def build_service_from_db(*, timezone_name: str | None = None) -> SchedulerService:
+    """Construct a SchedulerService from the current DB catalog.
+
+    Sync mirror of ``api/dependencies.py::build_service_from_db``. When
+    ``timezone_name`` is provided it overrides ``config.runtime.timezone_name``
+    after validation through :class:`zoneinfo.ZoneInfo` (which raises if
+    the name is not a known IANA timezone).
+    """
+    config = load_config()
+    if timezone_name is not None:
+        ZoneInfo(timezone_name)  # validates -- raises ZoneInfoNotFoundError on bad input
+        config = replace(config, runtime=replace(config.runtime, timezone_name=timezone_name))
+    slots, scenarios = load_scheduler_catalog()
+    return build_runtime_services_from_catalog(config, slots, scenarios)
+
+
+def scenario_ids_for_user(user_id: str, *, email: str | None = None, is_superuser: bool = False) -> set[str]:
+    """Return the set of scenario IDs visible to a user.
+
+    Mirrors ``api/catalog.py::scenario_ids_for_user``. The query reuses
+    ``accessible_scenarios_queryset`` so the visibility rules stay in a
+    single place.
+    """
+    return set(
+        accessible_scenarios_queryset(user_id, email=email, is_superuser=is_superuser).values_list("scenario_id", flat=True),
+    )

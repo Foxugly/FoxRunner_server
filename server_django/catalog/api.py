@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from accounts.permissions import require_user_scope
+from accounts.services import timezone_for_user
 from foxrunner.idempotency import get_idempotent_response, store_idempotent_response
 from ninja import Query, Router
 from ninja.errors import HttpError
@@ -17,6 +18,7 @@ from ninja.errors import HttpError
 from catalog import services as scenario_services
 from catalog.schemas import (
     DeletedOut,
+    RunOut,
     ScenarioDataOut,
     ScenarioDetailOut,
     ScenarioIn,
@@ -388,3 +390,114 @@ def get_user_scenario_data_endpoint(request, user_id: str):
     if not qs.exists():
         raise HttpError(404, "Aucun scenario pour cet utilisateur.")
     return scenario_services.aggregate_scenario_data()
+
+
+# --------------------------------------------------------------------------
+# Planning + sync run (Phase 4.7). Four endpoints under
+# /api/v1/users/{user_id}/ that bridge the FastAPI layer to the scheduler
+# engine. Read/plan endpoints accept owner-or-shared visibility via
+# ``scenario_ids_for_user`` / ``accessible_slots_queryset``. The two
+# mutating endpoints (/run, /run-next) are intentionally blocking -- they
+# call ``SchedulerService.run_scenario`` / ``run_next_for_scenarios``
+# which can take seconds. The async Job-queueing path lands in Phase 6.
+#
+# Quirks preserved verbatim:
+#   * ``/plan`` catches ``RuntimeError`` raised by the scheduler (missing
+#     scenario in the catalog) and re-raises it as 404, preserving the
+#     original message. Matches api/routers/catalog.py:215-216.
+#   * ``/plan`` and ``/run-next`` build the scheduler with the TARGET
+#     user's timezone (via ``accounts.services.timezone_for_user``). The
+#     ``/run`` endpoint does NOT -- it uses the actor's default timezone
+#     (matches the FastAPI behaviour).
+#   * ``/run-next`` returns 404 when the user has zero accessible
+#     scenarios. The response body omits ``scenario_id`` for run-next.
+# --------------------------------------------------------------------------
+
+
+@router.get("/users/{user_id}/plan", tags=["scenarios"])
+def user_plan_endpoint(request, user_id: str) -> dict[str, Any]:
+    current_user = request.auth
+    require_user_scope(user_id, current_user)
+    scenario_ids = scenario_services.scenario_ids_for_user(
+        user_id,
+        email=current_user.email,
+        is_superuser=current_user.is_superuser,
+    )
+    if not scenario_ids:
+        raise HttpError(404, "Aucun scenario pour cet utilisateur.")
+    try:
+        service = scenario_services.build_service_from_db(
+            timezone_name=timezone_for_user(user_id, current_user),
+        )
+        return service.describe_plan_for_scenarios(scenario_ids)
+    except RuntimeError as exc:
+        raise HttpError(404, str(exc)) from exc
+
+
+@router.get("/users/{user_id}/slots", response=SlotPage, tags=["slots"])
+def user_slots_endpoint(
+    request,
+    user_id: str,
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+):
+    current_user = request.auth
+    require_user_scope(user_id, current_user)
+    # Reuses the same queryset the /slots listing endpoint is built on;
+    # filtering by the target user's visibility stays consistent with the
+    # FastAPI ``list_accessible_slots`` helper (Phase 4.4).
+    records, total = scenario_services.list_accessible_slots(
+        current_user,
+        limit=limit,
+        offset=offset,
+    )
+    return {
+        "items": [scenario_services.slot_summary(record) for record in records],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+@router.post("/users/{user_id}/scenarios/{scenario_id}/run", response=RunOut, tags=["scenarios"])
+def run_user_scenario_endpoint(
+    request,
+    user_id: str,
+    scenario_id: str,
+    dry_run: bool = Query(default=True),
+):
+    current_user = request.auth
+    require_user_scope(user_id, current_user)
+    # Visibility check: 404 if the scenario is not owned or shared to the
+    # target user. Uses the actor's timezone on purpose -- matches FastAPI.
+    scenario_services.get_scenario_for_user(scenario_id, current_user)
+    service = scenario_services.build_service_from_db()
+    exit_code = service.run_scenario(scenario_id, dry_run=dry_run)
+    return {
+        "scenario_id": scenario_id,
+        "dry_run": dry_run,
+        "exit_code": exit_code,
+        "success": exit_code == 0,
+    }
+
+
+@router.post("/users/{user_id}/run-next", response=RunOut, tags=["scenarios"])
+def run_user_next_endpoint(
+    request,
+    user_id: str,
+    dry_run: bool = Query(default=True),
+):
+    current_user = request.auth
+    require_user_scope(user_id, current_user)
+    scenario_ids = scenario_services.scenario_ids_for_user(
+        user_id,
+        email=current_user.email,
+        is_superuser=current_user.is_superuser,
+    )
+    if not scenario_ids:
+        raise HttpError(404, "Aucun scenario pour cet utilisateur.")
+    service = scenario_services.build_service_from_db(
+        timezone_name=timezone_for_user(user_id, current_user),
+    )
+    exit_code = service.run_next_for_scenarios(scenario_ids, dry_run=dry_run)
+    return {"dry_run": dry_run, "exit_code": exit_code, "success": exit_code == 0}

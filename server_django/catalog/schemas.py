@@ -231,3 +231,21 @@ class ScenarioDataOut(Schema):
     default_network_key: str | None = None
     pushovers: list[str]
     networks: list[str]
+
+
+# --------------------------------------------------------------------------
+# Planning + sync run (Phase 4.7). Mirrors
+# ``RunScenarioResponsePayload`` from ``api/schemas.py``: ``scenario_id``
+# is optional so the same shape covers both ``/scenarios/{sid}/run`` and
+# ``/run-next`` (the latter omits it). ``PlanOut`` is a passthrough --
+# ``SchedulerService.describe_plan_for_scenarios`` already returns a
+# loosely-typed dict, mirroring the FastAPI ``response_model=PlanPayload``
+# (also a free-form dict).
+# --------------------------------------------------------------------------
+
+
+class RunOut(Schema):
+    scenario_id: str | None = None
+    dry_run: bool
+    exit_code: int
+    success: bool
