@@ -174,7 +174,14 @@ git commit -m "chore(django): include server_django apps in coverage source"
 
 ## Phase 2 — Models for catalog + ops (~2 h)
 
-Port the 11 SQLAlchemy models from `api/models.py` (User is already done) into `catalog/models.py` and `ops/models.py`. Do **not** add the email→UUID FKs yet — that's phase 5. For now `owner_user_id` etc. stay `UUIDField()` plain (we will turn them into FKs after the data migration).
+Port the 11 SQLAlchemy models from `api/models.py` (User is already done) into `catalog/models.py` and `ops/models.py`. Do **not** add the email→UUID FKs yet — that's phase 5.
+
+> **Correction (post-Phase-2.1 review):** All `*_user_id` columns (`Scenario.owner_user_id`, `ScenarioShare.user_id`, `Job.user_id`, `AuditEntry.actor_user_id`, `AppSetting.updated_by`, `IdempotencyKey.user_id`) **stay as `CharField(max_length=320)`** in Phase 2 to match the existing Alembic `String(320)` columns. Using `UUIDField` here would create a silent schema mismatch on PostgreSQL during the dual-stack window (the prod DB has `varchar(320)`, the Django model would claim `uuid`). Phase 5 does the type flip (`CharField(320)` → `UUIDField` → `ForeignKey(User)`) in one `AlterField` step **after** the data migration normalizes any email-stored values to UUID strings.
+
+> **Correction:** Only the indexes that actually exist in the Alembic chain go into `Meta.indexes`. Verified set on catalog tables (from `migrations/versions/20260421_0001_initial.py` and `20260421_0011_operational_indexes.py`):
+> - `scenarios`: `ix_scenarios_owner_user_id` (single col), `ix_scenarios_scenario_id` (single col, unique). Both auto-derived from `db_index=True` / `unique=True` on the field — no `Meta.indexes` entry needed.
+> - `scenario_shares`: `ix_scenario_shares_scenario_id` (auto from FK), `ix_scenario_shares_user_id` (auto from `db_index=True`). + named unique constraint `uq_scenario_share_user` on `(scenario_id, user_id)`.
+> - `slots`: `ix_slots_scenario_id` (auto from FK), `ix_slots_slot_id` (auto from `unique=True`), `ix_slots_scenario_enabled` (composite, **must be declared explicitly** in `Slot.Meta.indexes`).
 
 Before writing any field, re-open `api/models.py`. The mapping table from the handoff brief is the authoritative target.
 
@@ -230,13 +237,12 @@ Use the SQLAlchemy column types from `api/models.py:25-61` as the spec. Field-by
 
 ```python
 from __future__ import annotations
-import uuid
 from django.db import models
 
 
 class Scenario(models.Model):
     scenario_id = models.CharField(max_length=128, unique=True, db_index=True)
-    owner_user_id = models.UUIDField(db_index=True)  # Promoted to FK in phase 5
+    owner_user_id = models.CharField(max_length=320, db_index=True)  # Promoted to FK(User) in phase 5 (CharField -> UUIDField -> ForeignKey)
     description = models.TextField(default="", blank=True)
     definition = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -244,9 +250,6 @@ class Scenario(models.Model):
 
     class Meta:
         db_table = "scenarios"
-        indexes = [
-            models.Index(fields=["owner_user_id", "scenario_id"], name="ix_scenario_owner_id"),
-        ]
 
     def __str__(self) -> str:
         return self.scenario_id
@@ -254,7 +257,7 @@ class Scenario(models.Model):
 
 class ScenarioShare(models.Model):
     scenario = models.ForeignKey(Scenario, on_delete=models.CASCADE, related_name="shares", to_field="scenario_id", db_column="scenario_id")
-    user_id = models.UUIDField(db_index=True)  # Promoted to FK in phase 5
+    user_id = models.CharField(max_length=320, db_index=True)  # Promoted to FK(User) in phase 5
 
     class Meta:
         db_table = "scenario_shares"
@@ -275,9 +278,15 @@ class Slot(models.Model):
 
     class Meta:
         db_table = "slots"
+        indexes = [
+            # From migrations/versions/20260421_0011_operational_indexes.py
+            models.Index(fields=["scenario", "enabled"], name="ix_slots_scenario_enabled"),
+        ]
 ```
 
 > Note on FK to `scenario_id` (CharField): mirrors the SQLAlchemy schema where the FK is on the `scenario_id` business key, not the surrogate `id`. This keeps the existing DB column layout and avoids a destructive rewrite during phase 13.
+
+> Note on `owner_user_id`/`user_id` typing: `CharField(max_length=320)` matches the existing Alembic `String(320)` column exactly. Do NOT use `UUIDField` here — that would be a silent PostgreSQL schema mismatch during the dual-stack window. Phase 5 normalizes the values then `AlterField`s the column type.
 
 - [ ] **Step 4 — Generate migration**
 
@@ -369,7 +378,7 @@ from django.db import models
 class Job(models.Model):
     job_id = models.CharField(max_length=64, unique=True, db_index=True)
     celery_task_id = models.CharField(max_length=128, null=True, blank=True, db_index=True)
-    user_id = models.UUIDField(db_index=True)  # Promoted to FK in phase 5
+    user_id = models.CharField(max_length=320, db_index=True)  # Promoted to FK(User) in phase 5 (CharField -> UUIDField -> ForeignKey)
     kind = models.CharField(max_length=64, db_index=True)
     target_id = models.CharField(max_length=128, db_index=True)
     status = models.CharField(max_length=32, db_index=True)
@@ -441,7 +450,7 @@ class GraphNotification(models.Model):
 
 
 class AuditEntry(models.Model):
-    actor_user_id = models.UUIDField(null=True, db_index=True)  # FK + nullable promotion in phase 5
+    actor_user_id = models.CharField(max_length=320, null=True, blank=True, db_index=True)  # FK(User) + nullable promotion in phase 5
     action = models.CharField(max_length=128, db_index=True)
     target_type = models.CharField(max_length=64, db_index=True)
     target_id = models.CharField(max_length=320, db_index=True)
@@ -487,7 +496,7 @@ class AppSetting(models.Model):
 
 
 class IdempotencyKey(models.Model):
-    user_id = models.UUIDField(db_index=True)
+    user_id = models.CharField(max_length=320, db_index=True)  # internal key; not promoted in phase 5
     key = models.CharField(max_length=128, db_index=True)
     request_fingerprint = models.CharField(max_length=128)
     status_code = models.IntegerField(default=200)
@@ -1148,7 +1157,7 @@ Expected: all green.
 
 ## Phase 5 — UUID normalization data migration (~1 h)
 
-Replicate `migrations/versions/20260422_0012_normalize_owner_user_id.py` as a Django data migration, then promote the three `*_user_id` UUIDFields to ForeignKey on User and delete the email-fallback ownership code.
+Replicate `migrations/versions/20260422_0012_normalize_owner_user_id.py` as a Django data migration, then **AlterField** the three `*_user_id` columns from `CharField(max_length=320)` to `UUIDField` (post-data-migration values are guaranteed to parse as UUID), then promote them to ForeignKey on User and delete the email-fallback ownership code. The schema migration order matters: data normalization MUST happen before the type change, or `AlterField` will fail on rows whose column still holds an email.
 
 ### Task 5.1 — Data migration
 
