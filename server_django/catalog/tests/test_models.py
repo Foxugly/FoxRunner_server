@@ -1,3 +1,4 @@
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 
 from catalog.models import Scenario, ScenarioShare, Slot
@@ -19,5 +20,5 @@ class CatalogModelSmokeTest(TestCase):
     def test_share_uniqueness(self):
         s = Scenario.objects.create(scenario_id="demo3", owner_user_id="00000000-0000-0000-0000-000000000003")
         ScenarioShare.objects.create(scenario=s, user_id="00000000-0000-0000-0000-000000000004")
-        with self.assertRaises(Exception):
+        with self.assertRaises(IntegrityError), transaction.atomic():
             ScenarioShare.objects.create(scenario=s, user_id="00000000-0000-0000-0000-000000000004")
