@@ -72,6 +72,10 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "foxrunner.middleware.RequestContextMiddleware",
+    # Order: rate limiting and payload guards run BEFORE Django's CommonMiddleware
+    # so over-limit requests are short-circuited without touching auth or routing.
+    "foxrunner.rate_limit.RateLimitMiddleware",
+    "foxrunner.payload_limit.PayloadLimitMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -193,6 +197,14 @@ SECURE_REFERRER_POLICY = "no-referrer"
 X_FRAME_OPTIONS = "DENY"
 
 # Payload size cap — matches the FastAPI API_MAX_BODY_BYTES semantics.
+# Django enforces this only when Content-Length is provided (or for
+# materialised multipart uploads); RequestDataTooBig bubbles up to
+# ``foxrunner.payload_limit.PayloadLimitMiddleware`` which renders the
+# JSON 413 envelope.
+# TODO(asgi-deploy): the FastAPI implementation also covered chunked
+# request bodies (``Transfer-Encoding: chunked`` without Content-Length)
+# via an ASGI ``receive`` wrapper. Revisit ``payload_limit.py`` when
+# Daphne/Uvicorn becomes the production target.
 DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.getenv("API_MAX_BODY_BYTES", "1048576"))
 DATA_UPLOAD_MAX_NUMBER_FIELDS = 200
 
