@@ -22,6 +22,4 @@ class UserAdmin(BaseUserAdmin):
         ("Permissions", {"fields": ("is_staff", "is_superuser", "groups", "user_permissions")}),
         ("Journal", {"fields": ("last_login", "date_joined")}),
     )
-    add_fieldsets = (
-        (None, {"classes": ("wide",), "fields": ("email", "password1", "password2", "is_staff", "is_superuser", "is_verified")}),
-    )
+    add_fieldsets = ((None, {"classes": ("wide",), "fields": ("email", "password1", "password2", "is_staff", "is_superuser", "is_verified")}),)

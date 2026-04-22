@@ -50,10 +50,7 @@ def install_handlers(api: NinjaAPI) -> None:
     def _unhandled(request, exc: Exception):
         from django.conf import settings
 
-        production = (
-            str(getattr(settings, "APP_ENV", "")).lower() in {"production", "prod"}
-            or not getattr(settings, "DEBUG", False)
-        )
+        production = str(getattr(settings, "APP_ENV", "")).lower() in {"production", "prod"} or not getattr(settings, "DEBUG", False)
         message = "Erreur interne." if production else redact_text(str(exc))
         return _error_response(api, request, 500, "internal_error", message)
 

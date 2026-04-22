@@ -97,6 +97,7 @@ TEMPLATES = [
 
 # --- Database -----------------------------------------------------------
 
+
 def _database_config() -> dict:
     url = os.getenv("DATABASE_URL") or _translate_async_url(os.getenv("AUTH_DATABASE_URL", ""))
     if not url:
@@ -151,6 +152,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 
 # --- REST / djoser / JWT ------------------------------------------------
+
 
 def _parse_token_lifetime():
     from datetime import timedelta
@@ -268,5 +270,3 @@ LOGGING = {
         "smiley.api": {"handlers": ["console"], "level": "INFO", "propagate": False},
     },
 }
-
-
