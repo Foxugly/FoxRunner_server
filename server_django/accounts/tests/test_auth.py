@@ -180,7 +180,7 @@ class ForgotPasswordTest(TestCase):
         self.user = User.objects.create_user(email="carol@example.com", password="password123!")
 
     def test_forgot_password_silent_for_unknown_email(self):
-        with patch("api.mail.send_password_reset_email") as mock_send:
+        with patch("app.mail.send_password_reset_email") as mock_send:
             response = self.client.post(
                 "/api/v1/auth/forgot-password",
                 data={"email": "ghost@example.com"},
@@ -191,7 +191,7 @@ class ForgotPasswordTest(TestCase):
         mock_send.assert_not_called()
 
     def test_forgot_password_known_email_sends_token(self):
-        with patch("api.mail.send_password_reset_email") as mock_send:
+        with patch("app.mail.send_password_reset_email") as mock_send:
             response = self.client.post(
                 "/api/v1/auth/forgot-password",
                 data={"email": "carol@example.com"},

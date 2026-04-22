@@ -5,7 +5,7 @@ import os
 import smtplib
 from email.message import EmailMessage
 
-from api.graph import send_graph_mail
+from ops.graph import send_graph_mail
 
 try:
     from dotenv import load_dotenv

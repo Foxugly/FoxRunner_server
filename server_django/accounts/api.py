@@ -66,7 +66,7 @@ def forgot_password(request, payload: ForgotPasswordIn):
     user = User.objects.filter(email=payload.email).first()
     if user is not None:
         token = TimestampSigner(salt=PASSWORD_RESET_SALT).sign(str(user.id))
-        from api.mail import send_password_reset_email  # reused until phase 13
+        from app.mail import send_password_reset_email
 
         send_password_reset_email(user.email, token)
     return 202, {"status": "queued"}
