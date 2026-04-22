@@ -6,12 +6,10 @@ Create production secrets and environment variables:
 
 ```env
 APP_ENV=production
-AUTH_SECRET=<strong-secret>
-API_CREATE_TABLES_ON_STARTUP=false
-API_ENABLE_LEGACY_ROUTES=false
-API_CORS_ORIGINS=https://app.example.com
-API_LOG_JSON=true
-AUTH_DATABASE_URL=<database-url>
+DJANGO_SECRET_KEY=<strong-secret>           # legacy AUTH_SECRET still accepted
+CORS_ALLOWED_ORIGINS=https://app.example.com  # legacy API_CORS_ORIGINS still accepted
+APP_LOG_JSON=true
+DATABASE_URL=<database-url>                 # legacy AUTH_DATABASE_URL still accepted
 CELERY_BROKER_URL=<redis-url>
 CELERY_RESULT_BACKEND=<redis-url>
 ```
@@ -24,7 +22,8 @@ Production installs runtime dependencies only:
 
 ```powershell
 python -m pip install -r requirements.txt
-alembic upgrade head
+python manage.py migrate            # Django
+# (or, legacy FastAPI: alembic upgrade head)
 ```
 
 Development environments add lint, coverage, and pre-commit tooling:
@@ -37,18 +36,19 @@ python -m pip install -r requirements-dev.txt
 
 ```powershell
 $env:BOOTSTRAP_PASSWORD = "<strong-password>"
-python scripts/bootstrap_admin.py --email admin@example.com
+python manage.py bootstrap_admin --email admin@localhost
 ```
 
-`--password` is no longer accepted on the command line — set `BOOTSTRAP_PASSWORD` or let the script prompt via `getpass`. The script creates a verified superuser or promotes an existing user.
+`--password` is not accepted on the command line — set `BOOTSTRAP_PASSWORD` or let the command prompt via `getpass`. It creates a verified superuser or promotes an existing user. The legacy `python scripts/bootstrap_admin.py` is removed in Phase 13.
 
 ## 4. Start Services
 
 Start separately:
 
-- API: `uvicorn api.main:app`
-- worker: `celery -A api.celery_app.celery_app worker`
-- beat: `celery -A api.celery_app.celery_app beat`
+- API (Django): `gunicorn foxrunner.wsgi:application --workers 2`
+- API (legacy FastAPI, until Phase 13): `uvicorn api.main:app`
+- worker: `celery -A foxrunner.celery_app worker` (Django) / `celery -A api.celery_app.celery_app worker` (legacy)
+- beat: `celery -A foxrunner.celery_app beat` (Django) / `celery -A api.celery_app.celery_app beat` (legacy)
 - Redis
 - database
 - reverse proxy

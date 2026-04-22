@@ -1,26 +1,16 @@
 [tool.ruff]
 line-length = 180
 target-version = "py312"
+# Django auto-generates migration files; reformatting them to satisfy ruff
+# would diverge from `makemigrations` output and cause repeat fixes every
+# time a new model lands. Exclude them from both check and format.
+extend-exclude = ["**/migrations"]
 
 [tool.ruff.lint]
 select = ["F", "E4", "E7", "E9", "I", "B", "UP", "SIM"]
-# FastAPI idiomatically uses Depends(), Query(), Body(), etc. as defaults so
-# request-scoped dependencies are re-evaluated per request. Whitelisting them
-# suppresses B008 (function-call-in-default-argument) only for those APIs.
-[tool.ruff.lint.flake8-bugbear]
-extend-immutable-calls = [
-    "fastapi.Depends",
-    "fastapi.Query",
-    "fastapi.Body",
-    "fastapi.Header",
-    "fastapi.Path",
-    "fastapi.Cookie",
-    "fastapi.Form",
-    "fastapi.File",
-]
 
 [tool.coverage.run]
-source = ["api", "app", "cli", "network", "operations", "scenarios", "scheduler", "state"]
+source = ["accounts", "catalog", "ops", "foxrunner", "app", "cli", "network", "operations", "scenarios", "scheduler", "state"]
 
 [tool.coverage.report]
 fail_under = 84

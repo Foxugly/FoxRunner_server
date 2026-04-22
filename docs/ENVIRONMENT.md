@@ -2,6 +2,20 @@
 
 Use `.env.example` as the canonical local template. Use `.env.test` for local test-oriented defaults.
 
+## Django env vars (Phase 9 onward)
+
+| New name | Legacy name (still accepted) | Purpose |
+|---|---|---|
+| `DJANGO_SECRET_KEY` | `AUTH_SECRET` | SECRET_KEY for Django / JWT signing. Must be ≥32 chars in production. |
+| `DATABASE_URL` | `AUTH_DATABASE_URL` | Database connection string. `sqlite:///...` or `postgres://...`. Async driver suffixes (`+aiosqlite`, `+asyncpg`) stripped on the fly. |
+| `CORS_ALLOWED_ORIGINS` | `API_CORS_ORIGINS` | Comma-separated list of allowed CORS origins. Default `http://localhost:4200`. |
+
+Removed (no Django equivalent needed):
+- `API_CREATE_TABLES_ON_STARTUP` — `python manage.py migrate` handles it.
+- `API_ENABLE_LEGACY_ROUTES` — Ninja mounts everything under `/api/v1/`; no unprefixed routes.
+
+All other env vars (APP_ENV, APP_TIMEZONE, CELERY_BROKER_URL, GRAPH_*, RETENTION_*, SMOKE_*) work as before.
+
 ## Runtime
 
 - `APP_ENV`: environment name. `production` / `prod` turns on stricter runtime checks (`AUTH_SECRET` length, `GRAPH_WEBHOOK_CLIENT_STATE` required).

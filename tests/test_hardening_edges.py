@@ -1,12 +1,24 @@
-"""Tests targeting the behaviors introduced by the 2026-04 hardening pass.
+"""Framework-agnostic hardening invariants for the CLI engine.
 
-One file per theme would scatter small tests across many modules; grouping
-them here keeps the hardening invariants discoverable in a single place.
+The FastAPI HTTP-layer hardening tests (rate limit, payload limit,
+clientState validation, scenario ownership) moved to the Django side
+in Phase 13:
+
+- server_django/foxrunner/tests/test_rate_limit.py
+- server_django/foxrunner/tests/test_payload_limit.py
+- server_django/foxrunner/tests/test_security_headers.py
+- server_django/ops/tests/test_graph_subscriptions.py
+- server_django/catalog/tests/test_scenarios_api.py (ownership)
+
+This module retains only the engine-level invariants that have no web
+dependency: DST handling in :mod:`scheduler.model`, file-locking in
+:class:`state.store.ProcessLock` and :class:`state.store.HistoryStore`,
+``try``-block ``finally_steps`` exception propagation, and the
+:func:`scenarios.runner._run_with_timeout` budget.
 """
 
 from __future__ import annotations
 
-import asyncio
 import os
 import tempfile
 import time
@@ -15,180 +27,13 @@ from datetime import datetime
 from pathlib import Path
 from threading import Thread
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
 from zoneinfo import ZoneInfo
 
-from fastapi import HTTPException
-from starlette.applications import Starlette
-from starlette.responses import PlainTextResponse
-from starlette.routing import Route
-from starlette.testclient import TestClient
-
-from api.graph import save_graph_notifications, save_graph_subscription
-from api.payload_limit import install_payload_limit
-from api.permissions import require_scenario_owner, scenario_role
-from api.rate_limit import _allow_redis
 from scenarios.loader import ScenarioStep
 from scheduler.model import find_next_pending_execution, make_dt, pick_next_execution, random_datetime_in_slot
 from state.store import HistoryStore, ProcessLock
-from tests.helpers import fake_user, temp_service_db
 
-# --- Graph clientState validation ----------------------------------------
-
-
-class GraphClientStateValidationTests(unittest.TestCase):
-    def test_per_subscription_state_accepted(self):
-        with temp_service_db() as (_, _, session_maker, _):
-
-            async def run() -> int:
-                async with session_maker() as session:
-                    await save_graph_subscription(
-                        session,
-                        subscription={"id": "sub1", "clientState": "sub-secret", "expirationDateTime": "2026-04-23T10:00:00Z"},
-                        resource="users/a/messages",
-                        change_type="created",
-                        notification_url="https://example.com/webhook",
-                        lifecycle_notification_url=None,
-                    )
-                    # Global is deliberately different; delivery must still be
-                    # accepted because the per-subscription value matches.
-                    with patch.multiple("api.graph", GRAPH_WEBHOOK_CLIENT_STATE="other"):
-                        return await save_graph_notifications(
-                            session,
-                            {"value": [{"subscriptionId": "sub1", "changeType": "created", "resource": "users/a/messages/1", "clientState": "sub-secret"}]},
-                        )
-
-            with patch.dict(os.environ, {"GRAPH_WEBHOOK_REQUIRE_SUBSCRIPTION": "false", "APP_ENV": "development"}, clear=False):
-                self.assertEqual(asyncio.run(run()), 1)
-
-    def test_mismatch_rejected(self):
-        with temp_service_db() as (_, _, session_maker, _):
-
-            async def run() -> None:
-                async with session_maker() as session:
-                    await save_graph_subscription(
-                        session,
-                        subscription={"id": "sub1", "clientState": "sub-secret", "expirationDateTime": "2026-04-23T10:00:00Z"},
-                        resource="users/a/messages",
-                        change_type="created",
-                        notification_url="https://example.com/webhook",
-                        lifecycle_notification_url=None,
-                    )
-                    with patch.multiple("api.graph", GRAPH_WEBHOOK_CLIENT_STATE="global"):
-                        await save_graph_notifications(
-                            session,
-                            {"value": [{"subscriptionId": "sub1", "changeType": "created", "resource": "users/a/messages/1", "clientState": "wrong"}]},
-                        )
-
-            with (
-                patch.dict(os.environ, {"GRAPH_WEBHOOK_REQUIRE_SUBSCRIPTION": "false", "APP_ENV": "development"}, clear=False),
-                self.assertRaises(HTTPException) as ctx,
-            ):
-                asyncio.run(run())
-            self.assertEqual(ctx.exception.status_code, 403)
-
-    def test_production_requires_global_state(self):
-        with temp_service_db() as (_, _, session_maker, _):
-
-            async def run() -> None:
-                async with session_maker() as session:
-                    with patch.multiple("api.graph", GRAPH_WEBHOOK_CLIENT_STATE=""):
-                        await save_graph_notifications(session, {"value": [{"subscriptionId": "sub1", "clientState": "any"}]})
-
-            with patch.dict(os.environ, {"GRAPH_WEBHOOK_REQUIRE_SUBSCRIPTION": "false", "APP_ENV": "production"}, clear=False), self.assertRaises(HTTPException) as ctx:
-                asyncio.run(run())
-            self.assertEqual(ctx.exception.status_code, 503)
-
-
-# --- Scenario ownership (UUID vs email) ----------------------------------
-
-
-class ScenarioOwnerPermissionTests(unittest.TestCase):
-    def test_owner_matched_by_uuid(self):
-        user = fake_user("alice@example.com")
-        record = SimpleNamespace(owner_user_id=str(user.id))
-        # Must not raise.
-        require_scenario_owner(record, user)
-        role, writable = scenario_role(record, user)
-        self.assertEqual(role, "owner")
-        self.assertTrue(writable)
-
-    def test_owner_matched_by_email(self):
-        user = fake_user("alice@example.com")
-        record = SimpleNamespace(owner_user_id="alice@example.com")
-        require_scenario_owner(record, user)
-        role, writable = scenario_role(record, user)
-        self.assertEqual(role, "owner")
-        self.assertTrue(writable)
-
-    def test_unrelated_user_rejected(self):
-        user = fake_user("alice@example.com")
-        record = SimpleNamespace(owner_user_id="bob@example.com")
-        with self.assertRaises(HTTPException) as ctx:
-            require_scenario_owner(record, user)
-        self.assertEqual(ctx.exception.status_code, 403)
-
-
-# --- Rate limiter Redis backend ------------------------------------------
-
-
-class RateLimitRedisTests(unittest.TestCase):
-    def test_redis_window_allows_under_limit_and_rejects_over(self):
-        # Use the installed fakeredis-free approach: mock the redis pipeline
-        # to record operations and return ZCARD results we control.
-        pipeline = MagicMock()
-        pipeline.execute = AsyncMock(side_effect=[[None, None, 1, None], [None, None, 2, None], [None, None, 3, None]])
-        client = MagicMock()
-        client.pipeline.return_value = pipeline
-        allow_first = asyncio.run(_allow_redis(client, "k", 60, 2))
-        allow_second = asyncio.run(_allow_redis(client, "k", 60, 2))
-        allow_third = asyncio.run(_allow_redis(client, "k", 60, 2))
-        self.assertTrue(allow_first)
-        self.assertTrue(allow_second)
-        self.assertFalse(allow_third)
-
-
-# --- Payload limit (chunked body) ----------------------------------------
-
-
-def _build_echo_app() -> Starlette:
-    # Minimal Starlette app that exercises PayloadLimitMiddleware in
-    # isolation — no DB lifespan, no auth, no SQLite dependency. Any POST
-    # that reaches the endpoint echoes "ok"; if the middleware rejects
-    # early we see 413 instead.
-    async def echo(request):
-        await request.body()
-        return PlainTextResponse("ok")
-
-    app = Starlette(routes=[Route("/echo", echo, methods=["POST"])])
-    install_payload_limit(app)
-    return app
-
-
-class PayloadLimitChunkedTests(unittest.TestCase):
-    def test_content_length_over_limit_rejected(self):
-        body = b"x" * 5000
-        with patch.dict(os.environ, {"API_MAX_BODY_BYTES": "1024"}, clear=False), TestClient(_build_echo_app()) as client:
-            response = client.post("/echo", content=body)
-            self.assertEqual(response.status_code, 413)
-
-    def test_chunked_without_content_length_rejected(self):
-        def streamed():
-            yield b"x" * 600
-            yield b"x" * 600
-
-        with patch.dict(os.environ, {"API_MAX_BODY_BYTES": "1024"}, clear=False), TestClient(_build_echo_app()) as client:
-            response = client.post("/echo", content=streamed(), headers={"Transfer-Encoding": "chunked"})
-            self.assertEqual(response.status_code, 413)
-
-    def test_small_body_passes_through(self):
-        with patch.dict(os.environ, {"API_MAX_BODY_BYTES": "1024"}, clear=False), TestClient(_build_echo_app()) as client:
-            response = client.post("/echo", content=b"small")
-            self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.text, "ok")
-
-
-# --- DST fold ------------------------------------------------------------
+# --- DST -----------------------------------------------------------------
 
 
 class DSTFoldTests(unittest.TestCase):

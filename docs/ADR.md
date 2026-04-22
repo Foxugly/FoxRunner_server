@@ -56,3 +56,23 @@ Rationale:
 Decision: store DB/API timestamps in UTC and use `User.timezone_name` for local business planning and frontend display.
 
 Details: see [ADR_TIMEZONES.md](ADR_TIMEZONES.md).
+
+## ADR 007: Switch to Django + Ninja
+
+Decision: replace the FastAPI backend with Django 5 + Django Ninja, retaining the same `/api/v1` contract.
+
+Rationale:
+
+- richer ORM and admin UI for operators;
+- mature migration system (Django migrations) replaces Alembic;
+- single Python framework for the whole web stack reduces conceptual overhead;
+- djoser + simple-jwt covers register/login/reset without a custom auth router;
+- Ninja keeps OpenAPI generation lean and matches the Pydantic-style schemas the frontend already expects.
+
+Trade-offs:
+
+- adapters needed to keep the form-urlencoded login the Angular client uses (`POST /auth/jwt/login`);
+- pagination envelope `{items, total, limit, offset}` enforced manually rather than relying on DRF defaults;
+- one-shot data migration (`catalog/0002_normalize_owner_user_id`) consolidates email/UUID ownership before the FK promotion.
+
+See `docs/superpowers/plans/2026-04-22-django-migration.md` for the full execution plan.

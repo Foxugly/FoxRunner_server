@@ -73,3 +73,14 @@ Structured request context is logged through the `smiley.api` logger:
 - Graph configuration presence.
 
 Database and Redis failures mark readiness as degraded. Celery without workers is reported as `no_workers` so deployment automation can decide whether that is blocking.
+
+## Backend runtime (ADR 007)
+
+- Django 5 + Django Ninja at the repo root. The project is structured into three apps:
+  - `accounts` — custom User model (UUID PK, email login), djoser mounting, Ninja wrappers for the login/logout/reset contract the Angular client depends on, management command `bootstrap_admin`.
+  - `catalog` — Scenario, Slot, ScenarioShare, step-collection endpoints, planning, history.
+  - `ops` — Job + JobEvent (Celery-backed), AuditEntry, AppSetting, IdempotencyKey, Microsoft Graph subscriptions + notifications, monitoring/metrics, artifacts.
+- JWT via `djangorestframework-simplejwt`, wrapped as a Ninja `HttpBearer` so every protected route shares one code path.
+- Celery app at `foxrunner.celery_app`; tasks live in `ops/tasks.py`.
+- Global Ninja exception handler produces `{code, message, details}` with `redact_text` applied to the message — matches the pre-existing FastAPI contract.
+- Cache/rate-limit/idempotency backend = Redis via `django-redis` (same broker as Celery by default).
