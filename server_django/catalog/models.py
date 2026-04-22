@@ -13,7 +13,7 @@ from django.db import models
 
 class Scenario(models.Model):
     scenario_id = models.CharField(max_length=128, unique=True, db_index=True)
-    owner_user_id = models.UUIDField(db_index=True)  # Promoted to FK in phase 5
+    owner_user_id = models.CharField(max_length=320, db_index=True)  # Promoted to FK(User) in phase 5 (CharField -> UUIDField -> ForeignKey)
     description = models.TextField(default="", blank=True)
     definition = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -21,9 +21,6 @@ class Scenario(models.Model):
 
     class Meta:
         db_table = "scenarios"
-        indexes = [
-            models.Index(fields=["owner_user_id", "scenario_id"], name="ix_scenario_owner_id"),
-        ]
 
     def __str__(self) -> str:
         return self.scenario_id
@@ -37,7 +34,7 @@ class ScenarioShare(models.Model):
         to_field="scenario_id",
         db_column="scenario_id",
     )
-    user_id = models.UUIDField(db_index=True)  # Promoted to FK in phase 5
+    user_id = models.CharField(max_length=320, db_index=True)  # Promoted to FK(User) in phase 5 (CharField -> UUIDField -> ForeignKey)
 
     class Meta:
         db_table = "scenario_shares"
@@ -64,3 +61,7 @@ class Slot(models.Model):
 
     class Meta:
         db_table = "slots"
+        indexes = [
+            # From migrations/versions/20260421_0011_operational_indexes.py
+            models.Index(fields=["scenario", "enabled"], name="ix_slots_scenario_enabled"),
+        ]
