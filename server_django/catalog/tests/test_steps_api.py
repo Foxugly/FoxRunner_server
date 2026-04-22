@@ -75,7 +75,7 @@ class ListStepCollectionsTest(_BaseStepsApiTest):
     def test_list_collections_with_content_per_collection(self):
         self.scenario.definition = {
             "before_steps": [{"type": "sleep", "seconds": 1}],
-            "steps": [{"type": "http", "url": "https://example.com"}, {"type": "sleep", "seconds": 2}],
+            "steps": [{"type": "http_request", "url": "https://example.com"}, {"type": "sleep", "seconds": 2}],
             "on_success": [{"type": "notify", "channel": "ok"}],
             "on_failure": [{"type": "notify", "channel": "ko"}],
             "finally_steps": [{"type": "sleep", "seconds": 3}],
@@ -133,7 +133,7 @@ class GetStepTest(_BaseStepsApiTest):
     def setUp(self):
         super().setUp()
         self.scenario.definition = {
-            "steps": [{"type": "sleep", "seconds": 1}, {"type": "http", "url": "https://x.com"}],
+            "steps": [{"type": "sleep", "seconds": 1}, {"type": "http_request", "url": "https://x.com"}],
         }
         self.scenario.save()
 
@@ -141,7 +141,7 @@ class GetStepTest(_BaseStepsApiTest):
         response = self.client.get(self._url(suffix="/steps/1"), **_auth(self.alice_token))
         self.assertEqual(response.status_code, 200, response.content)
         body = response.json()
-        self.assertEqual(body["type"], "http")
+        self.assertEqual(body["type"], "http_request")
         self.assertEqual(body["url"], "https://x.com")
 
     def test_get_step_index_out_of_range_returns_404(self):
@@ -274,7 +274,7 @@ class UpdateStepTest(_BaseStepsApiTest):
         self.scenario.save()
 
     def test_update_step_owner(self):
-        payload = {"step": {"type": "http", "url": "https://new"}}
+        payload = {"step": {"type": "http_request", "url": "https://new"}}
         response = self.client.put(
             self._url(suffix="/steps/1"),
             data=json.dumps(payload),
@@ -284,9 +284,9 @@ class UpdateStepTest(_BaseStepsApiTest):
         self.assertEqual(response.status_code, 200, response.content)
         body = response.json()
         self.assertEqual(body["index"], 1)
-        self.assertEqual(body["step"]["type"], "http")
+        self.assertEqual(body["step"]["type"], "http_request")
         self.scenario.refresh_from_db()
-        self.assertEqual(self.scenario.definition["steps"][1]["type"], "http")
+        self.assertEqual(self.scenario.definition["steps"][1]["type"], "http_request")
         self.assertEqual(len(self.scenario.definition["steps"]), 2)
 
     def test_update_step_index_out_of_range_404(self):

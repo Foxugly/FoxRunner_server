@@ -8,9 +8,12 @@ in Phase 4.2 needs single-writer semantics).
 
 from __future__ import annotations
 
+import json
+import os
 import threading
 from collections import defaultdict
 from dataclasses import replace
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -25,7 +28,14 @@ from app.config import load_config
 from app.main import build_runtime_services_from_catalog
 from catalog.models import Scenario, ScenarioShare, Slot
 from catalog.permissions import _is_scenario_owner, require_scenario_owner, scenario_role
-from scenarios.loader import ScenarioDefinition, build_scenarios_from_map, build_slots_from_items, load_scenario_data
+from scenarios.loader import (
+    ScenarioDefinition,
+    build_scenarios_from_map,
+    build_slots_from_items,
+    load_scenario_data,
+    validate_scenarios_document,
+    validate_slots_document,
+)
 from scheduler.model import TimeSlot
 
 if TYPE_CHECKING:
@@ -35,6 +45,7 @@ STEP_COLLECTIONS = frozenset({"before_steps", "steps", "on_success", "on_failure
 
 _LOCKS_GUARD = threading.Lock()
 _LOCKS: dict[str, threading.Lock] = defaultdict(threading.Lock)
+_SLOTS_FILE_LOCK = threading.Lock()
 
 
 def _lock_for(scenario_id: str) -> threading.Lock:
@@ -44,6 +55,101 @@ def _lock_for(scenario_id: str) -> threading.Lock:
     """
     with _LOCKS_GUARD:
         return _LOCKS[scenario_id]
+
+
+def _load_json_dict(path: Path) -> dict[str, Any]:
+    """Read a JSON file as a dict; return {} when the file is missing.
+
+    Mirrors ``api/catalog._load_json`` but tolerates a missing file (the
+    Django ports run inside tests with tempdirs that may not have either
+    file pre-seeded).
+    """
+    if not path.exists():
+        return {}
+    with path.open("r", encoding="utf-8") as handle:
+        data = json.load(handle)
+    if not isinstance(data, dict):
+        raise ValueError(f"{path.name}: document racine invalide.")
+    return data
+
+
+def _write_json_atomic(path: Path, data: dict[str, Any]) -> None:
+    """Write JSON to ``path`` atomically via a sibling .tmp file + os.replace.
+
+    Mirrors ``api/catalog._write_json_atomic``.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp_file = path.with_suffix(path.suffix + ".tmp")
+    with temp_file.open("w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2, ensure_ascii=False)
+        handle.write("\n")
+    os.replace(temp_file, path)
+
+
+def _build_scenarios_document(scenarios_file: Path) -> dict[str, Any]:
+    """Return the full ``scenarios.json`` payload from the DB + existing file.
+
+    Preserves any top-level keys (``schema_version``, ``data`` -- which
+    nests ``default_pushover``, ``default_network``, ``pushovers``,
+    ``networks``) the file may already carry; only the ``scenarios`` map
+    is replaced from the DB. Falls back to a minimal but valid
+    ``schema_version=1`` + empty ``data`` skeleton when the file is
+    missing so the validator passes on first write.
+    """
+    document = _load_json_dict(scenarios_file)
+    document.setdefault("schema_version", 1)
+    document.setdefault("data", {})
+    document["scenarios"] = {
+        record.scenario_id: record.definition for record in Scenario.objects.all().order_by("scenario_id")
+    }
+    return document
+
+
+def _write_scenarios_file() -> None:
+    """Validate + atomically rewrite ``config.runtime.scenarios_file``.
+
+    Sync mirror of ``api/catalog.sync_scenarios_file`` (the helper that
+    runs after every CRUD on Scenario rows). Validates against the same
+    JSON-schema as the FastAPI path -- any error becomes ``HttpError(422)``
+    so the partial DB write is rolled back by the surrounding ``@transaction.atomic``.
+    """
+    config = load_config()
+    scenarios_file = config.runtime.scenarios_file
+    document = _build_scenarios_document(scenarios_file)
+    try:
+        validate_scenarios_document(document, scenarios_file.name)
+    except Exception as exc:
+        raise HttpError(422, str(exc)) from exc
+    _write_json_atomic(scenarios_file, document)
+
+
+def sync_slots_file() -> None:
+    """Validate + atomically rewrite ``config.runtime.slots_file``.
+
+    Mirrors ``api/catalog.sync_slots_file``: only ``enabled=True`` slots
+    appear in the output. The ``_SLOTS_FILE_LOCK`` serializes concurrent
+    writers since there is a single slots file.
+    """
+    config = load_config()
+    slots_file = config.runtime.slots_file
+    with _SLOTS_FILE_LOCK:
+        document = {
+            "slots": [
+                {
+                    "id": slot.slot_id,
+                    "days": list(slot.days or []),
+                    "start": slot.start,
+                    "end": slot.end,
+                    "scenario": slot.scenario_id,
+                }
+                for slot in Slot.objects.filter(enabled=True).order_by("slot_id")
+            ]
+        }
+        try:
+            validate_slots_document(document, slots_file.name)
+        except Exception as exc:
+            raise HttpError(422, str(exc)) from exc
+        _write_json_atomic(slots_file, document)
 
 
 def _step_requires_enterprise_network(step: Any) -> bool:
@@ -99,21 +205,22 @@ def save_scenario_definition(
     *,
     description: str | None = None,
 ) -> Scenario:
-    """Persist a new definition for a scenario.
+    """Persist a new definition for a scenario AND mirror it to the JSON file.
 
-    TODO(phase-13): port the JSON-file sync from
-    ``api.catalog.save_scenario_definition``. The dual-stack window keeps
-    the FastAPI app responsible for ``config/scenarios.json`` so the CLI
-    keeps working; once Phase 13 deletes the FastAPI tree this helper
-    must validate via ``scenarios.loader.validate_scenarios_document``
-    and atomically rewrite the file under
-    ``config.runtime.scenarios_file``.
+    Sync port of ``api/catalog.save_scenario_definition`` (lines 340-358 in
+    the FastAPI source). The per-scenario lock serializes the read-DB +
+    rewrite-JSON sequence; ``_write_scenarios_file`` validates the full
+    document via ``validate_scenarios_document`` and raises ``HttpError(422)``
+    on schema failure so the surrounding ``@transaction.atomic`` rolls the
+    DB row back -- the JSON file is left untouched (we validate BEFORE the
+    atomic replace).
     """
     with _lock_for(scenario.scenario_id):
         scenario.definition = definition
         if description is not None:
             scenario.description = description
         scenario.save()
+        _write_scenarios_file()
         return scenario
 
 
@@ -309,6 +416,7 @@ def delete_owned_scenario(*, scenario_id: str, current_user: User) -> dict[str, 
         raise HttpError(409, "Supprime ou deplace les slots avant le scenario.")
     before = scenario_summary(record)
     delete_scenario(scenario_id)
+    _write_scenarios_file()
     write_audit(
         actor=current_user,
         action="scenario.delete",
@@ -496,12 +604,7 @@ def create_owned_slot(*, payload, current_user: User) -> dict[str, Any]:
         end=payload.end,
         enabled=payload.enabled,
     )
-    # TODO(phase-13): port the JSON-file sync from
-    # ``api.catalog.sync_slots_file``. The dual-stack window keeps the
-    # FastAPI app responsible for ``config/slots.json`` so the CLI keeps
-    # working; once Phase 13 deletes the FastAPI tree this helper must
-    # call the equivalent of ``sync_slots_file`` via
-    # ``config.runtime.slots_file``.
+    sync_slots_file()
     result = slot_summary(record)
     write_audit(
         actor=current_user,
@@ -536,7 +639,7 @@ def update_owned_slot(*, slot_id: str, payload, current_user: User) -> dict[str,
     if payload.enabled is not None:
         record.enabled = payload.enabled
     record.save()
-    # TODO(phase-13): port sync_slots_file (see create_owned_slot).
+    sync_slots_file()
     result = slot_summary(record)
     write_audit(
         actor=current_user,
@@ -556,7 +659,7 @@ def delete_owned_slot(*, slot_id: str, current_user: User) -> dict[str, Any]:
     require_scenario_owner(scenario, current_user)
     before = slot_summary(record)
     record.delete()
-    # TODO(phase-13): port sync_slots_file (see create_owned_slot).
+    sync_slots_file()
     write_audit(
         actor=current_user,
         action="slot.delete",
