@@ -1166,6 +1166,8 @@ Expected: all green.
 
 Replicate `migrations/versions/20260422_0012_normalize_owner_user_id.py` as a Django data migration, then **AlterField** the three `*_user_id` columns from `CharField(max_length=320)` to `UUIDField` (post-data-migration values are guaranteed to parse as UUID), then promote them to ForeignKey on User and delete the email-fallback ownership code. The schema migration order matters: data normalization MUST happen before the type change, or `AlterField` will fail on rows whose column still holds an email.
 
+> Scope of `*_user_id` normalization: only **three** columns need the email→UUID data-migration pass — `scenarios.owner_user_id`, `scenario_shares.user_id`, and `audit_log.actor_user_id` — because these are the only ones touchable from the JSON-seed path (which writes `email` as the owner). The other two `*_user_id` columns (`jobs.user_id` and `idempotency_keys.user_id`) are **only ever written via the API path** with `str(current_user.id)` (a UUID string), so they never contain an email and need only a type flip in Phase 5: `Job.user_id` gets `CharField(320) → UUIDField → ForeignKey(User)`, and `IdempotencyKey.user_id` gets `CharField(320) → UUIDField` (no FK promotion — it stays an internal idempotency key, not a user relation).
+
 ### Task 5.1 — Data migration
 
 **Files:**

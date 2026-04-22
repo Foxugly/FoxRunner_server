@@ -89,3 +89,6 @@ class OpsModelSmokeTest(TestCase):
             before={},
             after={"a": 1},
         )
+        self.assertEqual(AppSetting.objects.get(key="k").value, {"a": 1})  # JSONField round-trip
+        self.assertEqual(AuditEntry.objects.count(), 1)
+        self.assertEqual(AuditEntry.objects.first().after, {"a": 1})
