@@ -24,10 +24,6 @@ django.setup()
 
 from foxrunner.api import api  # noqa: E402
 
-# Reuse the export script's post-processing so the comparison matches what
-# scripts/export_openapi.py writes (default ErrorOut response on every op).
-from scripts.export_openapi import _attach_default_error_response, _ensure_error_schema  # noqa: E402
-
 
 def main() -> int:
     expected_path = REPO_ROOT / "openapi.json"
@@ -35,10 +31,9 @@ def main() -> int:
         print("openapi.json is missing")
         return 1
 
-    raw_spec = api.get_openapi_schema()
-    spec = json.loads(json.dumps(raw_spec, default=str))
-    _ensure_error_schema(spec)
-    _attach_default_error_response(spec)
+    # FoxrunnerNinjaAPI.get_openapi_schema already applies the ErrorOut
+    # augmentation, matching the file dump from scripts/export_openapi.py.
+    spec = api.get_openapi_schema()
     generated = json.dumps(spec, indent=2, ensure_ascii=False, sort_keys=True) + "\n"
     expected = expected_path.read_text(encoding="utf-8")
     if generated != expected:
