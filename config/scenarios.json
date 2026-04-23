@@ -109,53 +109,34 @@
       ],
       "steps": [
         {
-          "type": "group",
-          "steps": [
-            {
-              "type": "open_url",
-              "url": "https://solidaris.get.be/Primetime/webapp/?locale=fr"
-            },
-            {
-              "type": "sleep_random",
-              "min_seconds": 5,
-              "max_seconds": 10
-            },
-            {
-              "type": "click",
-              "by": "id",
-              "locator": "login",
-              "timeout": 30
-            },
-            {
-              "type": "sleep_random",
-              "min_seconds": 5,
-              "max_seconds": 10
-            },
-            {
-              "type": "click",
-              "by": "xpath",
-              "locator": "//button[normalize-space()='Pointer']",
-              "timeout": 30
-            }
-          ]
+          "type": "open_url",
+          "url": "https://solidaris.get.be/Primetime/webapp/?locale=fr"
         },
         {
-          "type": "try",
-          "try_steps": [
-            {
-              "type": "sleep",
-              "seconds": 1
-            }
-          ],
-          "catch_steps": [
-            {
-              "type": "notify",
-              "ref": {
-                "pushover": "ops"
-              },
-              "message": "Bloc try en erreur: {error_message}"
-            }
-          ]
+          "type": "sleep_random",
+          "min_seconds": 5,
+          "max_seconds": 10
+        },
+        {
+          "type": "click",
+          "by": "id",
+          "timeout": 30,
+          "locator": "login"
+        },
+        {
+          "type": "sleep_random",
+          "min_seconds": 5,
+          "max_seconds": 10
+        },
+        {
+          "type": "click",
+          "by": "xpath",
+          "timeout": 30,
+          "locator": "//button[normalize-space()='Pointer']"
+        },
+        {
+          "type": "sleep",
+          "seconds": 5
         }
       ],
       "on_success": [
