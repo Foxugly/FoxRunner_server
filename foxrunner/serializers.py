@@ -9,9 +9,26 @@ is reused by admin endpoints in later phases).
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from ninja import Schema
+
+
+class ErrorOut(Schema):
+    """The {code, message, details} envelope returned by the global Ninja
+    exception handler in ``foxrunner.exception_handlers``.
+
+    Surfaced in OpenAPI by ``scripts/export_openapi.py``, which post-processes
+    the Ninja-generated spec to attach this schema as the default response on
+    every operation. Frontend consumers get strongly-typed errors out of the
+    box without us needing ``responses={400: ErrorOut, 401: ErrorOut, ...}``
+    on every single endpoint.
+    """
+
+    code: str
+    message: str
+    details: Any | None = None
 
 
 class UserOut(Schema):
