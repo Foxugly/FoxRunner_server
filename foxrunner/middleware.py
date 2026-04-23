@@ -2,8 +2,8 @@
 
 ``RequestContextMiddleware`` ensures every response carries an
 ``X-Request-ID`` header (mirrored from the incoming request when present)
-and emits a structured access log entry through the ``smiley.api``
-logger, matching the FastAPI implementation.
+and emits a structured access log entry through the ``foxrunner.api``
+logger.
 """
 
 from __future__ import annotations
@@ -12,7 +12,7 @@ import logging
 import time
 import uuid
 
-logger = logging.getLogger("smiley.api")
+logger = logging.getLogger("foxrunner.api")
 
 
 class RequestContextMiddleware:

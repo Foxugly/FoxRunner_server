@@ -6,7 +6,7 @@ Every API response includes `X-Request-ID`. Incoming values are preserved; other
 
 ## Logs
 
-API request logs use the `smiley.api` logger. Set `API_LOG_JSON=true` or `APP_LOG_JSON=true` for JSON logs.
+API request logs use the `foxrunner.api` logger. Set `API_LOG_JSON=true` or `APP_LOG_JSON=true` for JSON logs.
 
 Runtime logs use `app.logger.Logger`. Set `APP_LOG_CONSOLE_ENABLED=false` in tests to suppress console output.
 
@@ -14,11 +14,11 @@ Runtime logs use `app.logger.Logger`. Set `APP_LOG_CONSOLE_ENABLED=false` in tes
 
 `GET /api/v1/metrics` exposes Prometheus text metrics:
 
-- `smiley_jobs_total`
-- `smiley_jobs_failed`
-- `smiley_jobs_stuck`
-- `smiley_jobs_by_status{status="..."}`
-- `smiley_graph_subscriptions_expiring`
+- `foxrunner_jobs_total`
+- `foxrunner_jobs_failed`
+- `foxrunner_jobs_stuck`
+- `foxrunner_jobs_by_status{status="..."}`
+- `foxrunner_graph_subscriptions_expiring`
 
 ## Readiness
 

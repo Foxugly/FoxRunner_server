@@ -29,7 +29,7 @@ from collections import defaultdict, deque
 
 from django.http import HttpResponse
 
-logger = logging.getLogger("smiley.api.rate_limit")
+logger = logging.getLogger("foxrunner.api.rate_limit")
 
 # Fallback in-process windows. Module-level so all middleware instances share
 # the same buckets (Django typically instantiates middleware once per worker).

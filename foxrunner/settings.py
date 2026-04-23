@@ -310,6 +310,6 @@ LOGGING = {
     "root": {"handlers": ["console"], "level": "INFO"},
     "loggers": {
         "django.server": {"handlers": ["console"], "level": "INFO", "propagate": False},
-        "smiley.api": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "foxrunner.api": {"handlers": ["console"], "level": "INFO", "propagate": False},
     },
 }

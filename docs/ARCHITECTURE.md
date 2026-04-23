@@ -54,7 +54,7 @@ Database timestamps are treated as UTC. API serializers emit UTC ISO 8601 values
 
 Every HTTP response includes `X-Request-ID`. Incoming `X-Request-ID` is preserved; otherwise the API generates one.
 
-Structured request context is logged through the `smiley.api` logger:
+Structured request context is logged through the `foxrunner.api` logger:
 
 - request id;
 - method;

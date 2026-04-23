@@ -1193,10 +1193,8 @@ def models_count():
 def metrics_text() -> str:
     """GET /metrics. Returns Prometheus text exposition (text/plain; v=0.0.4).
 
-    Sync port of ``api/routers/runtime.py::metrics_endpoint``. Uses the
-    historical ``foxrunner_*`` namespace agreed in the Phase 7 plan
-    (FastAPI emits ``smiley_*`` -- the Django swap is the moment to align
-    on the project name).
+    Sync port of the FastAPI ``metrics_endpoint``. Uses the
+    ``foxrunner_*`` namespace agreed in the Phase 7 plan.
     """
     summary = monitoring_summary()
     jobs = summary["jobs"]

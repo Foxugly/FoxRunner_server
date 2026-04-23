@@ -23,7 +23,7 @@ from datetime import UTC, datetime, timedelta
 
 from foxrunner.celery import celery_app
 
-logger = logging.getLogger("smiley.api.tasks")
+logger = logging.getLogger("foxrunner.api.tasks")
 
 
 def _utc_now() -> datetime:

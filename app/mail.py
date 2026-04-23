@@ -17,7 +17,7 @@ except ImportError:
 
 load_dotenv()
 
-logger = logging.getLogger("smiley.api.mail")
+logger = logging.getLogger("foxrunner.api.mail")
 
 
 def send_password_reset_email(email: str, token: str) -> None:

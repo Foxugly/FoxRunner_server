@@ -27,7 +27,7 @@ AUTH_DATABASE_URL=sqlite+aiosqlite:///.runtime/users.db
 PostgreSQL example:
 
 ```env
-AUTH_DATABASE_URL=postgresql+asyncpg://user:password@host:5432/smiley
+DATABASE_URL=postgres://user:password@host:5432/foxrunner
 ```
 
 Run migrations:
@@ -229,17 +229,17 @@ API_RATE_LIMIT_REDIS_URL=redis://redis:6379/2   # optional; falls back to CELERY
 For production, keep reverse-proxy or gateway rate limiting as the primary protection — the in-app limiter is a safety net. Example Nginx baseline:
 
 ```nginx
-limit_req_zone $binary_remote_addr zone=smiley_auth:10m rate=5r/s;
-limit_req_zone $binary_remote_addr zone=smiley_webhooks:10m rate=20r/s;
+limit_req_zone $binary_remote_addr zone=foxrunner_auth:10m rate=5r/s;
+limit_req_zone $binary_remote_addr zone=foxrunner_webhooks:10m rate=20r/s;
 
 location /auth/ {
-    limit_req zone=smiley_auth burst=20 nodelay;
-    proxy_pass http://smiley_api;
+    limit_req zone=foxrunner_auth burst=20 nodelay;
+    proxy_pass http://foxrunner_api;
 }
 
 location /graph/webhook {
-    limit_req zone=smiley_webhooks burst=60 nodelay;
-    proxy_pass http://smiley_api;
+    limit_req zone=foxrunner_webhooks burst=60 nodelay;
+    proxy_pass http://foxrunner_api;
 }
 ```
 
