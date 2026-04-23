@@ -43,6 +43,12 @@ if TESTING:
         _test_slots.write_text('{"slots": []}\n', encoding="utf-8")
     os.environ.setdefault("APP_SCENARIOS_FILE", str(_test_scenarios))
     os.environ.setdefault("APP_SLOTS_FILE", str(_test_slots))
+    # Disable the rate limiter — Redis isn't available under test runners,
+    # the in-process fallback is shared across all tests, and 60 logins/min
+    # is easily exceeded by a fast Django test suite (CI ran ~100 tests/min
+    # and started failing with 429s mid-suite). Tests that target the rate
+    # limiter explicitly re-enable it via @override_settings or env patching.
+    os.environ.setdefault("API_RATE_LIMIT_ENABLED", "false")
 
 logger = logging.getLogger(__name__)
 
