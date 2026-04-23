@@ -217,6 +217,19 @@ DJOSER = {
 CORS_ALLOWED_ORIGINS = [o.strip() for o in os.getenv("CORS_ALLOWED_ORIGINS", os.getenv("API_CORS_ORIGINS", "http://localhost:4200")).split(",") if o.strip()]
 CORS_ALLOW_CREDENTIALS = True
 
+# Allow the Angular client to SEND its custom request headers and READ the
+# request-id header back from responses. Without these the browser silently
+# strips non-standard request headers during preflight and refuses to expose
+# non-standard response headers to JS.
+from corsheaders.defaults import default_headers  # noqa: E402
+
+CORS_ALLOW_HEADERS = (
+    *default_headers,
+    "x-request-id",
+    "idempotency-key",
+)
+CORS_EXPOSE_HEADERS = ["x-request-id"]
+
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "no-referrer"
 X_FRAME_OPTIONS = "DENY"
