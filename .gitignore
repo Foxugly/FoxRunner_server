@@ -2,7 +2,6 @@
 .env
 .env.*
 !.env.example
-!.env.test
 .claude/
 .idea/
 .ruff_cache/
