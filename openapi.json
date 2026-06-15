@@ -1089,6 +1089,32 @@
         "title": "JobPage",
         "type": "object"
       },
+      "MagicLinkExchangeIn": {
+        "properties": {
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "MagicLinkExchangeIn",
+        "type": "object"
+      },
+      "MagicLinkRequestIn": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email"
+        ],
+        "title": "MagicLinkRequestIn",
+        "type": "object"
+      },
       "MonitoringGraph": {
         "properties": {
           "expiring_within_hours": {
@@ -2872,6 +2898,87 @@
           }
         },
         "summary": "Logout (no-op for bearer transport)",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/magic-link/exchange": {
+      "post": {
+        "description": "Exchange a magic-link token for a JWT. 410 expired, 400 invalid.",
+        "operationId": "accounts_api_magic_link_exchange",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MagicLinkExchangeIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Erreur applicative renvoyee par le handler global ({code, message, details})."
+          }
+        },
+        "summary": "Magic Link Exchange",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/magic-link/request": {
+      "post": {
+        "description": "Silent for unknown / ineligible emails (no enumeration).",
+        "operationId": "accounts_api_magic_link_request",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MagicLinkRequestIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Erreur applicative renvoyee par le handler global ({code, message, details})."
+          }
+        },
+        "summary": "Magic Link Request",
         "tags": [
           "auth"
         ]
