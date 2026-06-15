@@ -65,6 +65,22 @@ class MagicLinkRequestEndpointTest(TestCase):
         self.assertEqual(r.status_code, 202, r.content)
         mock_send.assert_not_called()
 
+    def test_silent_for_inactive(self):
+        User.objects.create_user(
+            email="inactive@example.com",
+            password="password123!",
+            is_verified=True,
+            is_active=False,
+        )
+        with patch("app.mail.send_magic_link_email") as mock_send:
+            r = self.client.post(
+                "/api/v1/auth/magic-link/request",
+                data={"email": "inactive@example.com"},
+                content_type="application/json",
+            )
+        self.assertEqual(r.status_code, 202, r.content)
+        mock_send.assert_not_called()
+
     def test_eligible_sends_token(self):
         with patch("app.mail.send_magic_link_email") as mock_send:
             r = self.client.post(
@@ -120,4 +136,9 @@ class MagicLinkExchangeEndpointTest(TestCase):
     def test_unverified_user_returns_400(self):
         self.user.is_verified = False
         self.user.save(update_fields=["is_verified"])
+        self.assertEqual(self._exchange(make_magic_link_token(self.user.id)).status_code, 400)
+
+    def test_inactive_user_returns_400(self):
+        self.user.is_active = False
+        self.user.save(update_fields=["is_active"])
         self.assertEqual(self._exchange(make_magic_link_token(self.user.id)).status_code, 400)
