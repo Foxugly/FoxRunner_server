@@ -52,3 +52,36 @@ def send_password_reset_email(email: str, token: str) -> None:
         if username and password:
             smtp.login(username, password)
         smtp.send_message(message)
+
+
+def send_magic_link_email(email: str, token: str) -> None:
+    magic_url = os.getenv("APP_MAGIC_LINK_URL", "http://localhost:4200/auth/magic")
+    link = f"{magic_url}/{token}"
+    subject = "Votre lien de connexion FoxRunner"
+    body = f"Cliquez sur ce lien pour vous connecter (valable 15 minutes) :\n\n{link}"
+
+    if os.getenv("GRAPH_MAIL_ENABLED", "true").lower() == "true":
+        send_graph_mail(to=email, subject=subject, body=body)
+        return
+
+    host = os.getenv("SMTP_HOST")
+    if not host:
+        logger.error("Magic-link email not sent: Graph is disabled and SMTP_HOST is not configured.")
+        return
+    port = int(os.getenv("SMTP_PORT", "587"))
+    username = os.getenv("SMTP_USERNAME")
+    password = os.getenv("SMTP_PASSWORD")
+    sender = os.getenv("SMTP_FROM", username or "no-reply@localhost")
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = sender
+    message["To"] = email
+    message.set_content(body)
+
+    with smtplib.SMTP(host, port, timeout=20) as smtp:
+        if os.getenv("SMTP_STARTTLS", "true").lower() == "true":
+            smtp.starttls()
+        if username and password:
+            smtp.login(username, password)
+        smtp.send_message(message)
