@@ -25,8 +25,16 @@ from ninja import Router
 from ninja.errors import HttpError
 from rest_framework_simplejwt.tokens import RefreshToken
 
+from accounts.magic_link import make_magic_link_token, parse_magic_link_token
 from accounts.models import User
-from foxrunner.serializers import ForgotPasswordIn, ResetPasswordIn, UserOut, UserPatchIn
+from foxrunner.serializers import (
+    ForgotPasswordIn,
+    MagicLinkExchangeIn,
+    MagicLinkRequestIn,
+    ResetPasswordIn,
+    UserOut,
+    UserPatchIn,
+)
 
 router = Router(tags=["auth"])
 
@@ -96,6 +104,40 @@ def reset_password(request, payload: ResetPasswordIn) -> dict[str, str]:
     user.set_password(payload.password)
     user.save(update_fields=["password"])
     return {"status": "ok"}
+
+
+@router.post("/auth/magic-link/request", auth=None, response={202: dict})
+def magic_link_request(request, payload: MagicLinkRequestIn):
+    """Silent for unknown / ineligible emails (no enumeration)."""
+    user = User.objects.filter(email__iexact=payload.email, is_active=True, is_verified=True).first()
+    if user is not None:
+        token = make_magic_link_token(user.id)
+        from app.mail import send_magic_link_email
+
+        send_magic_link_email(user.email, token)
+    return 202, {"status": "queued"}
+
+
+@router.post("/auth/magic-link/exchange", auth=None)
+def magic_link_exchange(request, payload: MagicLinkExchangeIn) -> dict[str, str]:
+    """Exchange a magic-link token for a JWT. 410 expired, 400 invalid."""
+    try:
+        user_id = parse_magic_link_token(payload.token)
+    except SignatureExpired:
+        raise HttpError(410, "Lien expire.") from None
+    except BadSignature:
+        raise HttpError(400, "Lien invalide.") from None
+
+    try:
+        user = User.objects.get(id=user_id)
+    except (User.DoesNotExist, ValueError):
+        raise HttpError(400, "Lien invalide.") from None
+
+    if not (user.is_active and user.is_verified):
+        raise HttpError(400, "Lien invalide.") from None
+
+    refresh = RefreshToken.for_user(user)
+    return {"access_token": str(refresh.access_token), "token_type": "bearer"}
 
 
 @router.get("/users/me", response=UserOut)
