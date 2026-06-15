@@ -54,3 +54,11 @@ class ForgotPasswordIn(Schema):
 class ResetPasswordIn(Schema):
     token: str
     password: str
+
+
+class MagicLinkRequestIn(Schema):
+    email: str
+
+
+class MagicLinkExchangeIn(Schema):
+    token: str
