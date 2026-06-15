@@ -109,9 +109,7 @@ def reset_password(request, payload: ResetPasswordIn) -> dict[str, str]:
 @router.post("/auth/magic-link/request", auth=None, response={202: dict})
 def magic_link_request(request, payload: MagicLinkRequestIn):
     """Silent for unknown / ineligible emails (no enumeration)."""
-    user = User.objects.filter(
-        email__iexact=payload.email, is_active=True, is_verified=True
-    ).first()
+    user = User.objects.filter(email__iexact=payload.email, is_active=True, is_verified=True).first()
     if user is not None:
         token = make_magic_link_token(user.id)
         from app.mail import send_magic_link_email

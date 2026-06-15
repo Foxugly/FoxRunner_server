@@ -19,6 +19,4 @@ def make_magic_link_token(user_id) -> str:
 
 def parse_magic_link_token(token: str) -> str:
     """Return the embedded user_id (str). Raises SignatureExpired / BadSignature."""
-    return TimestampSigner(salt=MAGIC_LINK_SALT).unsign(
-        token, max_age=MAGIC_LINK_MAX_AGE_SECONDS
-    )
+    return TimestampSigner(salt=MAGIC_LINK_SALT).unsign(token, max_age=MAGIC_LINK_MAX_AGE_SECONDS)

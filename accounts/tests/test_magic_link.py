@@ -37,9 +37,7 @@ class MagicLinkTokenTest(TestCase):
 class MagicLinkRequestEndpointTest(TestCase):
     def setUp(self):
         self.client = Client()
-        self.user = User.objects.create_user(
-            email="eve@example.com", password="password123!", is_verified=True
-        )
+        self.user = User.objects.create_user(email="eve@example.com", password="password123!", is_verified=True)
 
     def test_silent_for_unknown_email(self):
         with patch("app.mail.send_magic_link_email") as mock_send:
@@ -53,9 +51,7 @@ class MagicLinkRequestEndpointTest(TestCase):
         mock_send.assert_not_called()
 
     def test_silent_for_unverified(self):
-        User.objects.create_user(
-            email="unv@example.com", password="password123!", is_verified=False
-        )
+        User.objects.create_user(email="unv@example.com", password="password123!", is_verified=False)
         with patch("app.mail.send_magic_link_email") as mock_send:
             r = self.client.post(
                 "/api/v1/auth/magic-link/request",
@@ -98,9 +94,7 @@ class MagicLinkRequestEndpointTest(TestCase):
 class MagicLinkExchangeEndpointTest(TestCase):
     def setUp(self):
         self.client = Client()
-        self.user = User.objects.create_user(
-            email="frank@example.com", password="password123!", is_verified=True
-        )
+        self.user = User.objects.create_user(email="frank@example.com", password="password123!", is_verified=True)
 
     def _exchange(self, token):
         return self.client.post(
