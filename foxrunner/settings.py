@@ -300,6 +300,11 @@ CELERY_BEAT_SCHEDULE = {
 MONITOR_REQUIRE_CELERY = os.getenv("MONITOR_REQUIRE_CELERY", os.getenv("API_REQUIRE_CELERY_WORKER", "false")).lower() == "true"
 MONITOR_REQUIRE_SCHEDULER = os.getenv("MONITOR_REQUIRE_SCHEDULER", "true").lower() == "true"
 
+# Job execution transport: 'auto' (inline when no Celery worker), 'true'
+# (force inline), 'false' (force Celery). Lets the live step view work on a
+# Windows box with no Celery worker.
+RUN_JOBS_INLINE = os.getenv("RUN_JOBS_INLINE", "auto").lower()
+
 
 # --- Internationalization / time ----------------------------------------
 
