@@ -25,7 +25,14 @@ def execute_scenario_job(job_id: str, scenario_id: str, dry_run: bool) -> dict:
     from ops.models import Job
     from ops.services import append_job_event
 
-    record = Job.objects.get(job_id=job_id)
+    try:
+        record = Job.objects.get(job_id=job_id)
+    except Job.DoesNotExist as exc:
+        # Defensive: the Job row may have been pruned between dispatch and
+        # execution. Surface a clean, typed error (matches the convention in
+        # ``ops.services`` which raises ``RuntimeError(f"Job introuvable: ...")``)
+        # rather than leaking the ORM's ``DoesNotExist``.
+        raise RuntimeError(f"Job introuvable: {job_id}") from exc
     record.status = "running"
     record.started_at = datetime.now(UTC)
     record.save(update_fields=["status", "started_at", "updated_at"])
