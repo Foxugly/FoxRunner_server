@@ -2,7 +2,7 @@ PYTHON := ./.venv/Scripts/python.exe
 CELERY := ./.venv/Scripts/celery.exe
 DJANGO_MANAGE := manage.py
 
-.PHONY: install relock lint format test test-django coverage coverage-django migrate migrate-test run-api run-worker run-beat run-scheduler reset-local docker-up docker-down backup-sqlite restore-sqlite openapi openapi-check docs-check audit smoke ci clean
+.PHONY: install relock lint format test test-django coverage coverage-django migrate migrate-test run-api run-worker run-beat run-scheduler run-dev reset-local docker-up docker-down backup-sqlite restore-sqlite openapi openapi-check docs-check audit smoke ci clean
 
 install:
 	$(PYTHON) -m pip install -r requirements-dev.lock
@@ -55,6 +55,10 @@ run-beat:
 # Register under an OS supervisor for boot persistence — see docs/OPERATIONS.md.
 run-scheduler:
 	$(PYTHON) scripts/run_scheduler_supervised.py
+
+# Dev convenience: API server + supervised scheduler in one terminal (Ctrl-C stops both).
+run-dev:
+	$(PYTHON) scripts/run_dev.py
 
 reset-local:
 	powershell -NoProfile -Command "Stop-Process -Name celery -ErrorAction SilentlyContinue; Remove-Item .runtime/users.db -ErrorAction SilentlyContinue"
