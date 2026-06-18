@@ -32,6 +32,37 @@ class PushoverConfig:
 
 
 @dataclass(frozen=True)
+class PushItConfig:
+    """Config for sending notifications through PushIT (our own platform).
+
+    The app token is a secret → read from the environment, never from the
+    versioned scenarios.json. POSTs to ``<base_url>/notifications/app/send/``
+    with an ``X-App-Token`` header.
+    """
+
+    app_token: str
+    base_url: str = "https://pushit-api.foxugly.com/api/v1"
+    title: str = "FoxRunner"
+    timeout_seconds: float = 20.0
+
+
+def load_pushit_config() -> PushItConfig | None:
+    """Build a PushItConfig from the environment, or None when not configured.
+
+    Enabled iff ``PUSHIT_APP_TOKEN`` is set — otherwise notifications fall back
+    to Pushover (if configured) so nothing breaks when PushIT isn't wired up.
+    """
+    token = os.getenv("PUSHIT_APP_TOKEN", "").strip()
+    if not token:
+        return None
+    return PushItConfig(
+        app_token=token,
+        base_url=os.getenv("PUSHIT_API_BASE_URL", "https://pushit-api.foxugly.com/api/v1").strip(),
+        title=os.getenv("PUSHIT_NOTIFICATION_TITLE", "FoxRunner").strip() or "FoxRunner",
+    )
+
+
+@dataclass(frozen=True)
 class TaskConfig:
     browser_window_size: str = "1280,900"
     page_load_timeout_seconds: int = 60

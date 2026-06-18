@@ -30,4 +30,7 @@ def _resolve_notifier(context: OperationContext, payload: dict) -> Notifier | No
         pushover_config = context.pushovers[pushover_key]
     except KeyError as exc:
         raise ValueError(f"Configuration Pushover inconnue: {pushover_key}") from exc
-    return Notifier(pushover_config, context.logger)
+    # Carry PushIT over from the default notifier so a per-key notify step still
+    # prefers PushIT (the Pushover key stays as the fallback target).
+    pushit = getattr(context.notifier, "pushit", None)
+    return Notifier(pushover_config, context.logger, pushit=pushit)

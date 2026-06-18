@@ -8,7 +8,7 @@ from pathlib import Path
 
 import truststore
 
-from app.config import AppConfig, load_config
+from app.config import AppConfig, load_config, load_pushit_config
 from app.logger import Logger
 from app.notifier import Notifier
 from network.guard import NetworkGuard
@@ -124,7 +124,8 @@ def _build_notifier(logger: Logger, scenario_data) -> Notifier:
     pushover_config = None
     if scenario_data.default_pushover_key is not None:
         pushover_config = scenario_data.pushovers[scenario_data.default_pushover_key]
-    return Notifier(pushover_config, logger)
+    # PushIT (env-configured) is the preferred channel; Pushover stays as fallback.
+    return Notifier(pushover_config, logger, pushit=load_pushit_config())
 
 
 def validate_slot_scenarios(slots: tuple[TimeSlot, ...], scenarios: dict[str, ScenarioDefinition]) -> None:
