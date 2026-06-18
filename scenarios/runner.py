@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import concurrent.futures
+import contextlib
 import time
+import traceback
 from collections.abc import Callable
 from dataclasses import dataclass
 from functools import partial
@@ -14,7 +16,16 @@ from app.logger import Logger
 from app.notifier import Notifier
 from operations import OperationContext, build_operation_registry, build_parallel_safe_steps
 from scenarios.engine import EngineContext, execute_block_step, is_atomic_step
+from scenarios.events import StepEvent, StepEventSink
 from scenarios.loader import ScenarioData, ScenarioDefinition, ScenarioStep
+
+
+def _emit(on_event: StepEventSink | None, **kwargs) -> None:
+    """Best-effort sink call — a sink error must never break the run."""
+    if on_event is None:
+        return
+    with contextlib.suppress(Exception):  # a sink error must never break the run
+        on_event(StepEvent(**kwargs))
 
 
 @dataclass(frozen=True)
@@ -48,6 +59,7 @@ def run_task(
     network_check_by_key: Callable[[str | None], bool] | None = None,
     initial_context: dict[str, str] | None = None,
     artifacts_dir: Path | None = None,
+    on_event: StepEventSink | None = None,
 ) -> TaskRunResult:
     driver = None
     current_step = "dry_run" if dry_run else "driver_created"
@@ -73,22 +85,54 @@ def run_task(
         driver = context.get("__driver__", driver)
 
         for index, step in enumerate(scenario.steps, start=1):
+            step_id = f"steps[{index - 1}]"
             current_step = f"{index}:{step.type}"
+            if not _should_execute(step, context):
+                _emit(
+                    on_event,
+                    step_id=step_id,
+                    event_type="step_skipped",
+                    step_type=step.type,
+                    message="Étape ignorée (condition when=faux).",
+                )
+                continue
+            _emit(on_event, step_id=step_id, event_type="step_started", step_type=step.type)
+            started = time.monotonic()
             if not dry_run and _requires_driver(step.type) and driver is None:
                 driver = create_driver(config)
-            driver = _execute_scenario_step(
-                step,
-                operation_registry=operation_registry,
-                driver=driver,
-                config=config,
-                logger=logger,
-                notifier=notifier,
-                network_check=network_check,
-                network_check_by_key=network_check_by_key,
-                scenario_data=scenario_data,
-                context=context,
-                dry_run=dry_run,
-                parallel_safe_steps=parallel_safe_steps,
+            try:
+                driver = _execute_scenario_step(
+                    step,
+                    operation_registry=operation_registry,
+                    driver=driver,
+                    config=config,
+                    logger=logger,
+                    notifier=notifier,
+                    network_check=network_check,
+                    network_check_by_key=network_check_by_key,
+                    scenario_data=scenario_data,
+                    context=context,
+                    dry_run=dry_run,
+                    parallel_safe_steps=parallel_safe_steps,
+                )
+            except Exception:
+                _emit(
+                    on_event,
+                    step_id=step_id,
+                    event_type="step_failed",
+                    step_type=step.type,
+                    level="error",
+                    message=context.get("error_message", ""),
+                    traceback=traceback.format_exc(),
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                )
+                raise
+            _emit(
+                on_event,
+                step_id=step_id,
+                event_type="step_succeeded",
+                step_type=step.type,
+                duration_ms=int((time.monotonic() - started) * 1000),
             )
 
         context["current_step"] = current_step

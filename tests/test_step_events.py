@@ -1,6 +1,10 @@
 import unittest
 
+from app.config import TaskConfig
+from app.logger import Logger
 from scenarios.events import StepEvent
+from scenarios.loader import ScenarioData, ScenarioDefinition, ScenarioStep
+from scenarios.runner import run_task
 
 
 class StepEventTests(unittest.TestCase):
@@ -23,6 +27,50 @@ class StepEventTests(unittest.TestCase):
         )
         self.assertEqual(ev.level, "error")
         self.assertEqual(ev.payload["screenshot"], "abc.png")
+
+
+def _scn(steps):
+    return ScenarioDefinition(scenario_id="s", description="", steps=tuple(steps))
+
+
+class RunTaskEventTests(unittest.TestCase):
+    def setUp(self):
+        self.events: list[StepEvent] = []
+        self.cfg = TaskConfig()
+        self.data = ScenarioData(pushovers={}, networks={})
+
+    def _run(self, scn):
+        return run_task(
+            self.cfg,
+            Logger(debug_enabled=False),
+            scenario=scn,
+            scenario_data=self.data,
+            dry_run=True,
+            on_event=self.events.append,
+        )
+
+    def test_emits_started_then_succeeded_per_step(self):
+        scn = _scn([ScenarioStep(type="notify", payload={"message": "hi"})])
+        result = self._run(scn)
+        self.assertTrue(result.success)
+        kinds = [(e.step_id, e.event_type) for e in self.events]
+        self.assertIn(("steps[0]", "step_started"), kinds)
+        self.assertIn(("steps[0]", "step_succeeded"), kinds)
+
+    def test_skipped_when_condition_false(self):
+        scn = _scn([ScenarioStep(type="notify", payload={"message": "x"}, when="context_exists:never")])
+        self._run(scn)
+        kinds = [e.event_type for e in self.events if e.step_id == "steps[0]"]
+        self.assertIn("step_skipped", kinds)
+        self.assertNotIn("step_succeeded", kinds)
+
+    def test_failed_carries_traceback(self):
+        scn = _scn([ScenarioStep(type="format_context", payload={"key": "k"})])  # missing 'template'
+        result = self._run(scn)
+        self.assertFalse(result.success)
+        failed = [e for e in self.events if e.event_type == "step_failed"]
+        self.assertTrue(failed)
+        self.assertTrue(failed[0].traceback)
 
 
 if __name__ == "__main__":
