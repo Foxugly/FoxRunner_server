@@ -68,7 +68,10 @@ class _BaseJobsApiTest(TestCase):
 class EnqueueScenarioJobTest(_BaseJobsApiTest):
     def test_enqueue_scenario_job_returns_202_and_calls_celery(self):
         fake_task = MagicMock(id="celery-task-1")
-        with patch("ops.tasks.run_scenario_job.delay", return_value=fake_task) as delay_mock:
+        # Force the Celery branch: with RUN_JOBS_INLINE=auto and no worker in
+        # the test env, dispatch would otherwise go inline (spawning a real
+        # bridge thread). These tests assert the Celery dispatch contract.
+        with patch("ops.services._celery_worker_available", return_value=True), patch("ops.tasks.run_scenario_job.delay", return_value=fake_task) as delay_mock:
             # ``ops.services.enqueue_scenario_job`` does ``from ops.tasks import
             # run_scenario_job`` then calls ``.delay(...)`` -- patching the
             # ``.delay`` attribute on the canonical Celery task object is
@@ -92,7 +95,7 @@ class EnqueueScenarioJobTest(_BaseJobsApiTest):
 
     def test_enqueue_idempotent_replay(self):
         fake_task = MagicMock(id="celery-task-2")
-        with patch("ops.tasks.run_scenario_job.delay", return_value=fake_task) as delay_mock:
+        with patch("ops.services._celery_worker_available", return_value=True), patch("ops.tasks.run_scenario_job.delay", return_value=fake_task) as delay_mock:
             first = self.client.post(
                 f"/api/v1/users/{self.alice.id}/scenarios/sc-alice/jobs",
                 HTTP_IDEMPOTENCY_KEY="idem-1",
@@ -112,7 +115,7 @@ class EnqueueScenarioJobTest(_BaseJobsApiTest):
 
     def test_enqueue_idempotent_different_payload_returns_409(self):
         fake_task = MagicMock(id="celery-task-3")
-        with patch("ops.tasks.run_scenario_job.delay", return_value=fake_task):
+        with patch("ops.services._celery_worker_available", return_value=True), patch("ops.tasks.run_scenario_job.delay", return_value=fake_task):
             first = self.client.post(
                 f"/api/v1/users/{self.alice.id}/scenarios/sc-alice/jobs?dry_run=true",
                 HTTP_IDEMPOTENCY_KEY="idem-2",
@@ -333,7 +336,7 @@ class RetryJobTest(_BaseJobsApiTest):
 
     def test_retry_job_owner(self):
         fake_task = MagicMock(id="celery-retry")
-        with patch("ops.tasks.run_scenario_job.delay", return_value=fake_task) as delay_mock:
+        with patch("ops.services._celery_worker_available", return_value=True), patch("ops.tasks.run_scenario_job.delay", return_value=fake_task) as delay_mock:
             response = self.client.post(
                 f"/api/v1/jobs/job-source/retry?user_id={self.alice.id}",
                 **_auth(self.alice_token),
@@ -391,7 +394,7 @@ class EnqueueIdempotencyPayloadJsonTest(_BaseJobsApiTest):
     def test_request_body_ignored_for_enqueue(self):
         # The endpoint doesn't read a request body; posting arbitrary JSON
         # must not break the contract.
-        with patch("ops.tasks.run_scenario_job.delay", return_value=MagicMock(id="celery-ignored-body")):
+        with patch("ops.services._celery_worker_available", return_value=True), patch("ops.tasks.run_scenario_job.delay", return_value=MagicMock(id="celery-ignored-body")):
             response = self.client.post(
                 f"/api/v1/users/{self.alice.id}/scenarios/sc-alice/jobs",
                 data=json.dumps({"foo": "bar"}),

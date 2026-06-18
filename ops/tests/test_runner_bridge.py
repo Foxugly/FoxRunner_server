@@ -41,3 +41,17 @@ class RunnerBridgeTests(TestCase):
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, "failed")
         self.assertIn("kaboom", self.job.error or "")
+
+
+class DispatchTests(TestCase):
+    @mock.patch("ops.services._celery_worker_available", return_value=False)
+    @mock.patch("ops.services._run_job_inline")
+    def test_no_worker_runs_inline(self, run_inline, _avail):
+        from accounts.models import User
+        from catalog.models import Scenario
+        from ops.services import enqueue_scenario_job
+
+        user = User.objects.create_user(email="c@d.co", password="pw12345!")
+        Scenario.objects.create(scenario_id="scn", owner=user, definition={"steps": []})
+        enqueue_scenario_job(user_id_str=str(user.id), scenario_id="scn", dry_run=True, current_user=user)
+        run_inline.assert_called_once()

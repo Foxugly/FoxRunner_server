@@ -453,6 +453,51 @@ def list_job_events(job_id: str) -> list[JobEvent]:
 # --------------------------------------------------------------------------
 
 
+def _celery_worker_available() -> bool:
+    """Best-effort: True if at least one Celery worker answers a quick ping.
+
+    RUN_JOBS_INLINE forces the decision: 'true' -> always inline (return
+    False), 'false' -> never inline (return True), 'auto' (default) -> probe.
+    """
+    from django.conf import settings
+
+    mode = str(getattr(settings, "RUN_JOBS_INLINE", "auto")).lower()
+    if mode == "true":
+        return False
+    if mode == "false":
+        return True
+    try:
+        from foxrunner.celery import celery_app
+
+        replies = celery_app.control.inspect(timeout=0.5).ping()
+        return bool(replies)
+    except Exception:
+        return False
+
+
+def _run_job_inline(job_id: str, scenario_id: str, dry_run: bool) -> None:
+    """Run the job in a background daemon thread (no Celery worker).
+
+    Each thread gets its own DB connection; we close it on exit so we don't
+    leak connections in the web process.
+    """
+    import threading
+
+    from django.db import connection
+
+    def _target() -> None:
+        from ops.runner_bridge import execute_scenario_job
+
+        try:
+            execute_scenario_job(job_id, scenario_id, dry_run)
+        except Exception:  # already recorded on the Job row by the bridge
+            pass
+        finally:
+            connection.close()
+
+    threading.Thread(target=_target, name=f"job-{job_id}", daemon=True).start()
+
+
 def enqueue_scenario_job(
     *,
     user_id_str: str,
@@ -471,7 +516,6 @@ def enqueue_scenario_job(
     # catalog.services, and ops.tasks (tasks import ops.services).
     from accounts.permissions import resolve_user
     from catalog.services import get_scenario_for_user
-    from ops.tasks import run_scenario_job
 
     target_user = resolve_user(user_id_str)
     get_scenario_for_user(scenario_id, target_user)
@@ -482,14 +526,24 @@ def enqueue_scenario_job(
         dry_run=dry_run,
         payload={"scenario_id": scenario_id},
     )
-    task = run_scenario_job.delay(job.job_id, scenario_id, dry_run)
-    set_celery_task_id(job.job_id, task.id)
-    append_job_event(
-        job_id=job.job_id,
-        event_type="submitted",
-        message="Tache Celery soumise.",
-        payload={"celery_task_id": task.id},
-    )
+    if _celery_worker_available():
+        from ops.tasks import run_scenario_job
+
+        task = run_scenario_job.delay(job.job_id, scenario_id, dry_run)
+        set_celery_task_id(job.job_id, task.id)
+        append_job_event(
+            job_id=job.job_id,
+            event_type="submitted",
+            message="Tâche Celery soumise.",
+            payload={"celery_task_id": task.id},
+        )
+    else:
+        append_job_event(
+            job_id=job.job_id,
+            event_type="submitted",
+            message="Exécution inline (sans Celery).",
+        )
+        _run_job_inline(job.job_id, scenario_id, dry_run)
     job.refresh_from_db()
     return serialize_job(job)
 
@@ -542,7 +596,6 @@ def retry_job_for_user(
     """
     from accounts.permissions import resolve_user
     from catalog.services import get_scenario_for_user
-    from ops.tasks import run_scenario_job
 
     target_user = resolve_user(user_id_str)
     source = get_job_for_user(job_id, target_user, is_superuser=current_user.is_superuser)
@@ -558,14 +611,25 @@ def retry_job_for_user(
         dry_run=source.dry_run,
         payload={**(source.payload or {}), "retry_of": source.job_id},
     )
-    task = run_scenario_job.delay(retry.job_id, retry.target_id, retry.dry_run)
-    set_celery_task_id(retry.job_id, task.id)
-    append_job_event(
-        job_id=retry.job_id,
-        event_type="submitted",
-        message="Retry Celery soumis.",
-        payload={"celery_task_id": task.id, "retry_of": source.job_id},
-    )
+    if _celery_worker_available():
+        from ops.tasks import run_scenario_job
+
+        task = run_scenario_job.delay(retry.job_id, retry.target_id, retry.dry_run)
+        set_celery_task_id(retry.job_id, task.id)
+        append_job_event(
+            job_id=retry.job_id,
+            event_type="submitted",
+            message="Retry Celery soumis.",
+            payload={"celery_task_id": task.id, "retry_of": source.job_id},
+        )
+    else:
+        append_job_event(
+            job_id=retry.job_id,
+            event_type="submitted",
+            message="Exécution inline (sans Celery).",
+            payload={"retry_of": source.job_id},
+        )
+        _run_job_inline(retry.job_id, retry.target_id, retry.dry_run)
     retry.refresh_from_db()
     write_audit(
         actor=current_user,
