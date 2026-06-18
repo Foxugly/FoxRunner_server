@@ -12,6 +12,7 @@ import contextlib
 import json
 import os
 import pathlib
+import sys
 import time
 import uuid as _uuid_mod
 from datetime import UTC, datetime, timedelta
@@ -20,6 +21,7 @@ from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import connection, transaction
 from django.db.models import Max, QuerySet
@@ -824,16 +826,69 @@ def _check_scheduler() -> dict[str, Any]:
         return {"status": "down", "detail": str(exc)}
 
 
+def _relaunch_commands() -> dict[str, str]:
+    """OS-appropriate relaunch command per runnable dependency.
+
+    The backend knows which OS it runs on, so the frontend banner can show a
+    copy-pasteable command that actually works there. `make` isn't available on
+    a stock Windows shell → use the venv binaries directly.
+    """
+    if sys.platform.startswith("win"):
+        py = r".\.venv\Scripts\python.exe"
+        celery = r".\.venv\Scripts\celery.exe"
+        return {
+            "scheduler": rf"{py} scripts\run_scheduler_supervised.py",
+            "celery_worker": f"{celery} -A foxrunner.celery_app worker --pool=solo",
+            "celery_beat": f"{celery} -A foxrunner.celery_app beat",
+            "redis": "docker compose up -d redis",
+        }
+    return {
+        "scheduler": "make run-scheduler",
+        "celery_worker": "make run-worker",
+        "celery_beat": "make run-beat",
+        "redis": "docker compose up -d redis",
+    }
+
+
 def system_status() -> dict[str, Any]:
-    """Aggregate health of every moving part the frontend banner watches."""
-    checks = {
+    """Aggregate health of every moving part the frontend banner watches.
+
+    A dependency the deployment doesn't use (e.g. Celery/Redis in a CLI-only
+    setup) is marked ``required: false`` — if it's down it's reported as
+    ``disabled`` rather than alarming, so the banner only fires on things that
+    actually matter here. Required-and-down checks carry a relaunch ``command``.
+    """
+    require_celery = bool(getattr(settings, "MONITOR_REQUIRE_CELERY", False))
+    require_scheduler = bool(getattr(settings, "MONITOR_REQUIRE_SCHEDULER", True))
+    required = {
+        "database": True,
+        "redis": require_celery,
+        "celery_worker": require_celery,
+        "celery_beat": require_celery,
+        "scheduler": require_scheduler,
+    }
+    raw = {
         "database": _check_database(),
         "redis": _check_redis(),
         "celery_worker": _check_celery_workers(),
         "celery_beat": _check_celery_beat(),
         "scheduler": _check_scheduler(),
     }
-    down = [name for name, result in checks.items() if result.get("status") != "ok"]
+    commands = _relaunch_commands()
+    checks: dict[str, Any] = {}
+    down: list[str] = []
+    for name, result in raw.items():
+        result["required"] = required[name]
+        if result.get("status") != "ok":
+            if required[name]:
+                if name in commands:
+                    result["command"] = commands[name]
+                down.append(name)
+            else:
+                # Unused dependency down → benign, don't drive the alarm.
+                result["status"] = "disabled"
+        checks[name] = result
+
     if any(name in _CRITICAL_CHECKS for name in down):
         overall = "down"
     elif down:

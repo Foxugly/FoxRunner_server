@@ -290,6 +290,17 @@ CELERY_BEAT_SCHEDULE = {
 }
 
 
+# --- System status monitoring -------------------------------------------
+# Which dependencies system_status (GET /api/v1/system/status + frontend alarm
+# banner) treats as REQUIRED. A non-required dependency that's down is reported
+# as "disabled" instead of alarming — so a CLI-only deployment (just the
+# scheduler, no Celery) doesn't cry wolf about Redis/worker/beat.
+# Celery defaults OFF (mirrors API_REQUIRE_CELERY_WORKER=false): turn it on when
+# you actually run worker/beat. Redis is required iff Celery is.
+MONITOR_REQUIRE_CELERY = os.getenv("MONITOR_REQUIRE_CELERY", os.getenv("API_REQUIRE_CELERY_WORKER", "false")).lower() == "true"
+MONITOR_REQUIRE_SCHEDULER = os.getenv("MONITOR_REQUIRE_SCHEDULER", "true").lower() == "true"
+
+
 # --- Internationalization / time ----------------------------------------
 
 LANGUAGE_CODE = "fr-be"

@@ -11,7 +11,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest import mock
 
-from django.test import Client, TestCase
+from django.test import Client, TestCase, override_settings
 
 from accounts.models import User
 from ops import services as ops_services
@@ -29,10 +29,12 @@ def _write_heartbeat(state_dir: str, *, age_seconds: float, state: str = "planni
 
 
 class SystemStatusServiceTest(TestCase):
-    def _run(self, state_dir: str, *, ping_replies):
+    def _run(self, state_dir: str, *, ping_replies, broker_ok: bool = True):
         """Run system_status with celery mocked and APP_STATE_DIR redirected."""
         celery_mock = mock.MagicMock()
         celery_mock.control.ping.return_value = ping_replies
+        if not broker_ok:
+            celery_mock.connection.return_value.ensure_connection.side_effect = OSError("refused")
         with (
             mock.patch("foxrunner.celery.celery_app", celery_mock),
             mock.patch.dict(os.environ, {"APP_STATE_DIR": state_dir}),
@@ -59,6 +61,8 @@ class SystemStatusServiceTest(TestCase):
         self.assertIn("offline", result["checks"]["scheduler"]["detail"])
         self.assertEqual(result["status"], "down")  # scheduler is critical
         self.assertIn("scheduler", result["down"])
+        # required-and-down → carries a relaunch command for the banner
+        self.assertIn("command", result["checks"]["scheduler"])
 
     def test_scheduler_down_when_heartbeat_missing(self):
         with tempfile.TemporaryDirectory() as state_dir:  # no heartbeat file
@@ -66,6 +70,20 @@ class SystemStatusServiceTest(TestCase):
         self.assertEqual(result["checks"]["scheduler"]["status"], "down")
         self.assertEqual(result["status"], "down")
 
+    def test_unused_celery_is_disabled_not_alarmed(self):
+        # Default MONITOR_REQUIRE_CELERY=false → Redis/worker/beat down must not
+        # alarm (CLI-only deployment); only the scheduler matters.
+        with tempfile.TemporaryDirectory() as state_dir:
+            _write_heartbeat(state_dir, age_seconds=5)
+            result = self._run(state_dir, ping_replies=[], broker_ok=False)  # no workers + no redis
+        self.assertEqual(result["checks"]["celery_worker"]["status"], "disabled")
+        self.assertEqual(result["checks"]["redis"]["status"], "disabled")
+        self.assertEqual(result["checks"]["celery_worker"]["required"], False)
+        self.assertNotIn("celery_worker", result["down"])
+        self.assertNotIn("redis", result["down"])
+        self.assertEqual(result["status"], "ok")  # scheduler up, celery unused
+
+    @override_settings(MONITOR_REQUIRE_CELERY=True)
     def test_degraded_when_only_workers_down(self):
         AppSetting.objects.create(key="celery_beat_heartbeat", value={"at": _iso_z(datetime.now(UTC))})
         with tempfile.TemporaryDirectory() as state_dir:
@@ -74,7 +92,9 @@ class SystemStatusServiceTest(TestCase):
         self.assertEqual(result["checks"]["celery_worker"]["status"], "down")
         self.assertEqual(result["checks"]["scheduler"]["status"], "ok")
         self.assertEqual(result["status"], "degraded")  # worker is non-critical
+        self.assertIn("command", result["checks"]["celery_worker"])
 
+    @override_settings(MONITOR_REQUIRE_CELERY=True)
     def test_beat_down_when_stamp_stale(self):
         AppSetting.objects.create(
             key="celery_beat_heartbeat",
