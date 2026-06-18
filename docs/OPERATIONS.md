@@ -361,6 +361,25 @@ Angular frontends poll it and show a **global alarm banner** (red for a down
 critical dependency, amber for degraded). Detection is automatic; the pieces
 below make them **self-heal** so the banner is a backstop, not a daily chore.
 
+### One command to run the whole stack
+
+```bash
+python scripts/run_stack.py        # or: make run-stack
+```
+
+Cross-platform launcher; **Ctrl-C stops everything**. It adapts to the OS:
+- **Windows** (dev / IT-locked box): API server (`runserver`) + supervised
+  scheduler. **No Redis/Celery** (skipped — they're not expected there, and the
+  status banner treats them as not-required, so no false alarm). Stop/restart =
+  Ctrl-C then re-run.
+- **Linux**: API server + scheduler + Celery worker + beat. Set
+  `RUN_GUNICORN=true` to serve via gunicorn (prod). Redis must be running
+  (`docker compose up -d redis`).
+- Env flags: `HOST`, `RUN_CELERY=true|false`, `RUN_GUNICORN=true`.
+
+For a hardened prod deployment you can still run each process as its own
+supervised service instead (below).
+
 ### Celery / Redis / DB (docker)
 
 `docker-compose.yml` sets `restart: unless-stopped` on every service
