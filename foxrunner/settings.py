@@ -330,6 +330,14 @@ LOGGING = {
     "root": {"handlers": ["console"], "level": "INFO"},
     "loggers": {
         "django.server": {"handlers": ["console"], "level": "INFO", "propagate": False},
-        "foxrunner.api": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        # `foxrunner.api` carries the per-request access log ("http_request",
+        # emitted by RequestContextMiddleware). During test runs that is one INFO
+        # line per request and floods the CI output, so quiet it to WARNING under
+        # TESTING while keeping INFO (for observability) in dev/prod.
+        "foxrunner.api": {
+            "handlers": ["console"],
+            "level": "WARNING" if TESTING else "INFO",
+            "propagate": False,
+        },
     },
 }
