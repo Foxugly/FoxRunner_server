@@ -202,6 +202,6 @@ def get_job_artifact_endpoint(request, job_id: str, kind: str):
     record = ops_services.get_job_for_user(job_id, request.auth, is_superuser=request.auth.is_superuser)
     subdir, ext, content_type = _ARTIFACT_KINDS[kind]
     path = load_config().runtime.artifacts_dir / subdir / f"{record.job_id}{ext}"
-    if not path.exists():
+    if not path.is_file():
         raise HttpError(404, "Artefact introuvable.")
     return HttpResponse(path.read_bytes(), content_type=content_type)
