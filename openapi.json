@@ -1923,6 +1923,39 @@
         "title": "StepMutationOut",
         "type": "object"
       },
+      "SystemStatusOut": {
+        "description": "GET /system/status — aggregate health for the frontend alarm banner.\n\n``status`` is ``ok`` | ``degraded`` | ``down``; ``down`` lists the failing\ncheck names; ``checks`` maps each dependency (database, redis,\ncelery_worker, celery_beat, scheduler) to its own ``{status, detail, ...}``.",
+        "properties": {
+          "checks": {
+            "additionalProperties": true,
+            "title": "Checks",
+            "type": "object"
+          },
+          "down": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Down",
+            "type": "array"
+          },
+          "generated_at": {
+            "title": "Generated At",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "generated_at",
+          "down",
+          "checks"
+        ],
+        "title": "SystemStatusOut",
+        "type": "object"
+      },
       "UserOut": {
         "properties": {
           "date_joined": {
@@ -4518,6 +4551,44 @@
         "summary": "Update Slot Endpoint",
         "tags": [
           "slots"
+        ]
+      }
+    },
+    "/api/v1/system/status": {
+      "get": {
+        "description": "Aggregate liveness of the scheduler, Celery worker/beat, Redis and DB.\n\nAuthenticated (any logged-in user) — operational health, not data. Polled\nby the frontend's global alarm banner.",
+        "operationId": "ops_api_system_status_endpoint",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemStatusOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Erreur applicative renvoyee par le handler global ({code, message, details})."
+          }
+        },
+        "security": [
+          {
+            "JWTAuth": []
+          }
+        ],
+        "summary": "System status (scheduler / celery / redis / db)",
+        "tags": [
+          "runtime"
         ]
       }
     },

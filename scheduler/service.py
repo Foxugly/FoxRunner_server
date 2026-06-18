@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import threading
 import time
 import traceback
@@ -296,10 +297,8 @@ class SchedulerService:
 
         def _beat_forever() -> None:
             while True:
-                try:
+                with contextlib.suppress(Exception):
                     self.heartbeat_store.beat(state=self._heartbeat_state)
-                except Exception:
-                    pass
                 time.sleep(self._heartbeat_interval)
 
         self.heartbeat_store.beat(state=self._heartbeat_state)  # first beat, synchronous
