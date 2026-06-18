@@ -3657,6 +3657,55 @@
         ]
       }
     },
+    "/api/v1/jobs/{job_id}/artifacts/{kind}": {
+      "get": {
+        "operationId": "ops_api_get_job_artifact_endpoint",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "title": "Job Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "kind",
+            "required": true,
+            "schema": {
+              "title": "Kind",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Erreur applicative renvoyee par le handler global ({code, message, details})."
+          }
+        },
+        "security": [
+          {
+            "JWTAuth": []
+          }
+        ],
+        "summary": "Get Job Artifact Endpoint",
+        "tags": [
+          "jobs"
+        ]
+      }
+    },
     "/api/v1/jobs/{job_id}/cancel": {
       "post": {
         "operationId": "ops_api_cancel_job_endpoint",

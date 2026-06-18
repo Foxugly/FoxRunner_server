@@ -53,7 +53,16 @@ class RunScenarioJobTaskTest(TestCase):
             result = run_scenario_job("job-run-1", "sc-alice", True)
         self.assertEqual(result, {"job_id": "job-run-1", "exit_code": 0})
         build_mock.assert_called_once_with()
-        service.run_scenario.assert_called_once_with("sc-alice", dry_run=True)
+        # The task now delegates to ``ops.runner_bridge.execute_scenario_job``,
+        # which runs the scenario through an event sink. The runner is called
+        # with the live-execution wiring (``on_event`` sink + ``execution_id``)
+        # in addition to the scenario id and ``dry_run``.
+        service.run_scenario.assert_called_once()
+        call = service.run_scenario.call_args
+        self.assertEqual(call.args, ("sc-alice",))
+        self.assertTrue(call.kwargs["dry_run"])
+        self.assertTrue(callable(call.kwargs["on_event"]))
+        self.assertEqual(call.kwargs["execution_id"], "job-run-1")
 
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, "success")
@@ -96,7 +105,11 @@ class RunScenarioJobTaskTest(TestCase):
 
         self.job.refresh_from_db()
         self.assertEqual(self.job.status, "failed")
-        self.assertEqual(self.job.error, "boom")
+        # The bridge records the full traceback on ``Job.error`` for
+        # debuggability (not just the bare message); it must still surface the
+        # underlying exception text.
+        self.assertIn("boom", self.job.error)
+        self.assertIn("RuntimeError", self.job.error)
         self.assertIsNotNone(self.job.finished_at)
         # The ``running`` event was written before the exception; the
         # failure event must also be present with level="error".

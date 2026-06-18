@@ -275,7 +275,7 @@ class SchedulerService:
         self._handle_task_result(result, execution_time, slot, scenario, slot_key)
         return 0 if result.success else 2
 
-    def run_scenario(self, scenario_id: str, dry_run: bool) -> int:
+    def run_scenario(self, scenario_id: str, dry_run: bool, on_event=None, execution_id: str | None = None) -> int:
         scenario = self.scenarios.get(scenario_id)
         if scenario is None:
             self.logger.error(f"Scenario introuvable: {scenario_id}")
@@ -283,7 +283,7 @@ class SchedulerService:
         execution_time = datetime.now(self.runtime.timezone).replace(microsecond=0)
         synthetic_slot = TimeSlot("__manual__", tuple(range(7)), execution_time.hour, execution_time.minute, 23, 59, scenario_id)
         slot_key = synthetic_slot.to_key(execution_time)
-        result = self._run_once(synthetic_slot, scenario, slot_key, execution_time, dry_run=dry_run)
+        result = self._run_once(synthetic_slot, scenario, slot_key, execution_time, dry_run=dry_run, on_event=on_event, execution_id=execution_id)
         return 0 if result.success else 2
 
     def _start_heartbeat(self) -> threading.Thread:
@@ -429,8 +429,10 @@ class SchedulerService:
         *,
         dry_run: bool,
         scheduled_for: datetime | None = None,
+        on_event=None,
+        execution_id: str | None = None,
     ) -> TaskRunResult:
-        execution_id = uuid4().hex
+        execution_id = execution_id or uuid4().hex
         self.next_execution_store.save(
             slot_key,
             execution_time,
@@ -457,6 +459,7 @@ class SchedulerService:
                 "executed_at": execution_time.isoformat(),
             },
             artifacts_dir=self.runtime.artifacts_dir,
+            on_event=on_event,
         )
 
     def _handle_task_result(
