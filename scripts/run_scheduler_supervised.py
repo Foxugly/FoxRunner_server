@@ -57,8 +57,7 @@ def main() -> int:
             backoff = _INITIAL_BACKOFF_SECONDS
 
         print(
-            f"[supervisor] scheduler exited with code {code} after {int(ran_seconds)}s "
-            f"— restarting in {backoff}s",
+            f"[supervisor] scheduler exited with code {code} after {int(ran_seconds)}s — restarting in {backoff}s",
             flush=True,
         )
         time.sleep(backoff)
