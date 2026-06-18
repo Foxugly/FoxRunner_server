@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import replace
 from pathlib import Path
@@ -117,15 +118,73 @@ def build_runtime_services_from_catalog(base_config: AppConfig, slots, scenarios
         slots=slots,
         scenarios=scenarios,
         scenario_data=scenario_data,
+        notifier_resolver=_build_notifier_resolver(logger, scenario_data),
     )
 
 
-def _build_notifier(logger: Logger, scenario_data) -> Notifier:
-    pushover_config = None
+def _default_pushover_config(scenario_data):
     if scenario_data.default_pushover_key is not None:
-        pushover_config = scenario_data.pushovers[scenario_data.default_pushover_key]
-    # PushIT (env-configured) is the preferred channel; Pushover stays as fallback.
-    return Notifier(pushover_config, logger, pushit=load_pushit_config())
+        return scenario_data.pushovers[scenario_data.default_pushover_key]
+    return None
+
+
+def _build_notifier(logger: Logger, scenario_data) -> Notifier:
+    """Build the shared fallback notifier (no scenario owner in context).
+
+    PushIT is the preferred channel, Pushover the fallback. The PushIT
+    config here comes from the env (``PUSHIT_APP_TOKEN``) -- a deprecated,
+    shared fallback used only for scheduler-level messages with no owner
+    and when a scenario owner has no per-user target in the DB.
+    """
+    return Notifier(_default_pushover_config(scenario_data), logger, pushit=load_pushit_config())
+
+
+def _build_notifier_resolver(logger: Logger, scenario_data):
+    """Return a per-scenario Notifier factory backed by the per-user DB config.
+
+    The notification config is per-user: each notification is sent through
+    the PushIT app owned by the scenario's owner (resolved from the DB --
+    the CLI reads the same local DB via Django). Falls back to the shared
+    env PushIT token, then Pushover, when the owner has no target.
+    """
+    pushover_config = _default_pushover_config(scenario_data)
+    env_pushit = load_pushit_config()
+
+    def resolve(scenario) -> Notifier:
+        owner_id = getattr(scenario, "owner_user_id", None) if scenario is not None else None
+        pushit = _load_owner_pushit(owner_id) or env_pushit
+        return Notifier(pushover_config, logger, pushit=pushit)
+
+    return resolve
+
+
+def _load_owner_pushit(owner_id):
+    """Read the scenario owner's default PushIT config from the DB, or None.
+
+    Lazily bootstraps Django so the standalone CLI scheduler (``python
+    main.py``) can read the same local database the server writes. Any
+    failure (no DB, Django unavailable in pure-engine tests) degrades to
+    None so the caller falls back to the env/Pushover channel.
+    """
+    if not owner_id:
+        return None
+    try:
+        _ensure_django()
+        from accounts.services import load_pushit_config_for_owner
+
+        return load_pushit_config_for_owner(owner_id)
+    except Exception:
+        return None
+
+
+def _ensure_django() -> None:
+    import django
+    from django.conf import settings
+
+    if settings.configured:
+        return
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "foxrunner.settings")
+    django.setup()
 
 
 def validate_slot_scenarios(slots: tuple[TimeSlot, ...], scenarios: dict[str, ScenarioDefinition]) -> None:

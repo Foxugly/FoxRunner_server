@@ -4,6 +4,7 @@ import contextlib
 import threading
 import time
 import traceback
+from collections.abc import Callable
 from datetime import datetime
 from uuid import uuid4
 
@@ -58,10 +59,16 @@ class SchedulerService:
         slots: tuple[TimeSlot, ...],
         scenarios: dict[str, ScenarioDefinition],
         scenario_data: ScenarioData,
+        notifier_resolver: Callable[[ScenarioDefinition | None], Notifier] | None = None,
     ):
         self.config = config
         self.logger = logger
         self.notifier = notifier
+        # Optional per-scenario notifier factory: when set, every notification
+        # is sent through the config of the scenario's *owner* (resolved from
+        # the DB). When None, the single shared ``notifier`` is used so the
+        # CLI engine and existing tests keep their previous behaviour.
+        self._notifier_resolver = notifier_resolver
         self.network_guard = network_guard
         self.slots = slots
         self.scenarios = scenarios
@@ -78,6 +85,22 @@ class SchedulerService:
         # Beat well under the backend's staleness threshold (90s) so a single
         # missed write never trips a false "offline".
         self._heartbeat_interval = max(5, min(self.runtime.check_interval_seconds, 15))
+
+    def _notifier_for(self, scenario: ScenarioDefinition | None) -> Notifier:
+        """Return the Notifier to use for ``scenario``.
+
+        Delegates to the per-scenario resolver when one was injected (so the
+        scenario owner's PushIT config is used); otherwise falls back to the
+        single shared notifier. A resolver that raises must never break the
+        scheduler loop, so its failure degrades to the shared notifier.
+        """
+        if self._notifier_resolver is None:
+            return self.notifier
+        try:
+            return self._notifier_resolver(scenario) or self.notifier
+        except Exception as exc:
+            self.logger.error(f"Resolution du notifier echouee: {exc}")
+            return self.notifier
 
     def choose_next_slot(self, now: datetime) -> tuple[datetime, TimeSlot, datetime]:
         return find_next_pending_execution(now, self.slots, self.state_store.has_executed)
@@ -208,7 +231,7 @@ class SchedulerService:
             scenario=scenario,
             scenario_data=self.scenario_data,
             dry_run=True,
-            notifier=self.notifier,
+            notifier=self._notifier_for(scenario),
             network_check=lambda: self.network_guard.is_default_network_available(),
             network_check_by_key=self.network_guard.is_network_available_by_key,
             initial_context={
@@ -347,7 +370,7 @@ class SchedulerService:
                             self.runtime.planning_notification_cooldown_seconds,
                         ):
                             message = "Planification suspendue: machine non connectee au reseau d'entreprise ou au VPN."
-                            self.notifier.send(message)
+                            self._notifier_for(scenario).send(message)
                             self.logger.warning(message)
                             network_alert_sent_at = now
                         time.sleep(self.runtime.network_retry_seconds)
@@ -363,7 +386,7 @@ class SchedulerService:
                             scenario_id=scenario.scenario_id,
                         )
                         message = f"Prochaine execution planifiee: {next_run.strftime('%Y-%m-%d %H:%M:%S')} ({slot.slot_id} -> {scenario.scenario_id})"
-                        self.notifier.send(message)
+                        self._notifier_for(scenario).send(message)
                         self.logger.info(message)
                         last_planned_slot_key = slot_key
 
@@ -380,7 +403,7 @@ class SchedulerService:
                         time.sleep(self.runtime.check_interval_seconds)
                         continue
 
-                    if scenario.requires_enterprise_network and not self.network_guard.check_before_run(self.notifier):
+                    if scenario.requires_enterprise_network and not self.network_guard.check_before_run(self._notifier_for(scenario)):
                         self.next_execution_store.save(
                             slot_key,
                             next_run,
@@ -445,7 +468,7 @@ class SchedulerService:
             scenario=scenario,
             scenario_data=self.scenario_data,
             dry_run=dry_run,
-            notifier=self.notifier,
+            notifier=self._notifier_for(scenario),
             network_check=lambda: self.network_guard.is_default_network_available(),
             network_check_by_key=self.network_guard.is_network_available_by_key,
             initial_context={

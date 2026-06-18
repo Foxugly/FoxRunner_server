@@ -11,7 +11,8 @@ import uuid
 
 from django.core.exceptions import ValidationError
 
-from accounts.models import User
+from accounts.models import PushItTarget, User
+from app.config import PushItConfig
 
 
 def timezone_for_user(user_id_str: str, current_user: User) -> str:
@@ -35,3 +36,35 @@ def timezone_for_user(user_id_str: str, current_user: User) -> str:
         with contextlib.suppress(User.DoesNotExist):
             target = User.objects.get(email=user_id_str)
     return target.timezone_name if target is not None else current_user.timezone_name
+
+
+# --------------------------------------------------------------------------
+# PushIT targets (per-user notification apps). The CLI scheduler and the
+# server both resolve a scenario owner's config through
+# ``load_pushit_config_for_owner`` -- the DB is the single source of truth.
+# --------------------------------------------------------------------------
+
+
+def _target_to_config(target: PushItTarget) -> PushItConfig:
+    return PushItConfig(
+        app_token=target.app_token,
+        base_url=target.base_url or "https://pushit-api.foxugly.com/api/v1",
+        title=target.title or "FoxRunner",
+    )
+
+
+def load_pushit_config_for_owner(owner_id) -> PushItConfig | None:
+    """Return the default PushIT config for ``owner_id`` from the DB, or None.
+
+    Picks the owner's ``is_default`` target first, else the alphabetically
+    first one. Returns None when the owner has no target, ``owner_id`` is
+    falsy, or the DB is simply unavailable (so the CLI engine still works
+    in pure-unit-test contexts with no database configured).
+    """
+    if not owner_id:
+        return None
+    try:
+        target = PushItTarget.objects.filter(owner_id=owner_id).order_by("-is_default", "name").first()
+    except Exception:
+        return None
+    return _target_to_config(target) if target is not None else None

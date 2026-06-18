@@ -11,6 +11,7 @@ from __future__ import annotations
 import uuid
 from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -67,3 +68,51 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self) -> str:
         return self.email
+
+
+class PushItTarget(models.Model):
+    """A per-user PushIT application the scheduler/scenarios can notify.
+
+    Each row is owned by a single user and is never shared: a user only
+    ever sees and edits their own targets (the CRUD endpoints scope every
+    query to ``request.auth``). The ``app_token`` is the PushIT app token
+    (header ``X-App-Token``); it is a secret but is returned to its own
+    owner so the frontend editor can display/modify it.
+
+    The CLI scheduler resolves the config of a scenario's *owner* from
+    this table (it reads the same local DB via Django), so notifications
+    follow whoever owns the scenario rather than a single shared token.
+    Exactly one target per owner may carry ``is_default=True`` (enforced
+    in :meth:`save`).
+    """
+
+    owner = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="pushit_targets",
+        db_column="owner_user_id",
+    )
+    name = models.CharField(max_length=64)
+    app_token = models.CharField(max_length=255)
+    base_url = models.CharField(max_length=255, default="https://pushit-api.foxugly.com/api/v1")
+    title = models.CharField(max_length=128, default="FoxRunner")
+    is_default = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "pushit_targets"
+        constraints = [
+            models.UniqueConstraint(fields=["owner", "name"], name="uq_pushit_target_owner_name"),
+        ]
+        ordering = ["name"]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.owner_id})"
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # A single default per owner: when this row becomes the default,
+        # clear the flag on the owner's other targets in the same write.
+        if self.is_default:
+            PushItTarget.objects.filter(owner_id=self.owner_id, is_default=True).exclude(pk=self.pk).update(is_default=False)
