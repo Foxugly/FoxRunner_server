@@ -81,6 +81,8 @@ def run_task(
             context=context,
             dry_run=dry_run,
             parallel_safe_steps=parallel_safe_steps,
+            on_event=on_event,
+            collection="before_steps",
         )
         driver = context.get("__driver__", driver)
 
@@ -149,6 +151,8 @@ def run_task(
             context=context,
             dry_run=dry_run,
             parallel_safe_steps=parallel_safe_steps,
+            on_event=on_event,
+            collection="on_success",
         )
         driver = context.get("__driver__", driver)
         if dry_run:
@@ -174,6 +178,8 @@ def run_task(
             context=context,
             dry_run=dry_run,
             parallel_safe_steps=parallel_safe_steps,
+            on_event=on_event,
+            collection="on_failure",
         )
         driver = context.get("__driver__", driver)
         logger.error(f"Echec de la tache Selenium a l'etape {current_step}: {exc}")
@@ -200,6 +206,8 @@ def run_task(
             context=context,
             dry_run=dry_run,
             parallel_safe_steps=parallel_safe_steps,
+            on_event=on_event,
+            collection="finally_steps",
         )
         driver = context.get("__driver__", driver)
         if driver is not None:
@@ -414,21 +422,55 @@ def _execute_hook_steps(
     context: dict[str, str],
     dry_run: bool,
     parallel_safe_steps,
+    on_event: StepEventSink | None = None,
+    collection: str = "",
 ) -> None:
-    for step in steps:
-        driver_ref["driver"] = _execute_scenario_step(
-            step,
-            operation_registry=operation_registry,
-            driver=driver_ref["driver"],
-            config=config,
-            logger=logger,
-            notifier=notifier,
-            network_check=network_check,
-            network_check_by_key=network_check_by_key,
-            scenario_data=scenario_data,
-            context=context,
-            dry_run=dry_run,
-            parallel_safe_steps=parallel_safe_steps,
+    for index, step in enumerate(steps):
+        step_id = f"{collection}[{index}]"
+        if not _should_execute(step, context):
+            _emit(
+                on_event,
+                step_id=step_id,
+                event_type="step_skipped",
+                step_type=step.type,
+                message="Étape ignorée (condition when=faux).",
+            )
+            continue
+        _emit(on_event, step_id=step_id, event_type="step_started", step_type=step.type)
+        started = time.monotonic()
+        try:
+            driver_ref["driver"] = _execute_scenario_step(
+                step,
+                operation_registry=operation_registry,
+                driver=driver_ref["driver"],
+                config=config,
+                logger=logger,
+                notifier=notifier,
+                network_check=network_check,
+                network_check_by_key=network_check_by_key,
+                scenario_data=scenario_data,
+                context=context,
+                dry_run=dry_run,
+                parallel_safe_steps=parallel_safe_steps,
+            )
+        except Exception as exc:
+            _emit(
+                on_event,
+                step_id=step_id,
+                event_type="step_failed",
+                step_type=step.type,
+                level="error",
+                message=str(exc),
+                traceback=traceback.format_exc(),
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
+            raise
+        _emit(
+            on_event,
+            step_id=step_id,
+            event_type="step_succeeded",
+            step_type=step.type,
+            duration_ms=int((time.monotonic() - started) * 1000),
         )
     # Only propagate the driver when hooks actually produced one; otherwise we
     # would clobber the driver already held by run_task and leak the original.

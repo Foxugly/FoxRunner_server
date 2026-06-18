@@ -73,6 +73,18 @@ class RunTaskEventTests(unittest.TestCase):
         self.assertTrue(failed[0].traceback)
         self.assertTrue(failed[0].message)
 
+    def test_before_steps_emit_with_collection_id(self):
+        scn = ScenarioDefinition(
+            scenario_id="s",
+            description="",
+            before_steps=(ScenarioStep(type="notify", payload={"message": "b"}),),
+            steps=(ScenarioStep(type="notify", payload={"message": "s"}),),
+        )
+        self._run(scn)
+        ids = {e.step_id for e in self.events}
+        self.assertIn("before_steps[0]", ids)
+        self.assertIn("steps[0]", ids)
+
 
 if __name__ == "__main__":
     unittest.main()
