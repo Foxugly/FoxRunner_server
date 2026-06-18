@@ -352,10 +352,49 @@ In a second terminal:
 .\.venv\Scripts\celery.exe -A api.celery_app.celery_app worker --loglevel=INFO --pool=solo
 ```
 
+## System status & auto-restart
+
+The backend exposes **`GET /api/v1/system/status`** (authenticated) aggregating the
+liveness of every moving part — `database`, `redis`, `celery_worker`,
+`celery_beat`, and the CLI `scheduler` — as `ok` / `degraded` / `down`. The
+Angular frontends poll it and show a **global alarm banner** (red for a down
+critical dependency, amber for degraded). Detection is automatic; the pieces
+below make them **self-heal** so the banner is a backstop, not a daily chore.
+
+### Celery / Redis / DB (docker)
+
+`docker-compose.yml` sets `restart: unless-stopped` on every service
+(`postgres`, `redis`, `api`, `worker`, `beat`, `flower`) — Docker relaunches them
+on crash and on host reboot. If you run these outside Docker, put them under your
+process supervisor (systemd `Restart=always`, NSSM, etc.).
+
+### Scheduler auto-restart
+
+The CLI scheduler (`python main.py` → `SchedulerService.loop`) is **not** a Docker
+service; run it **supervised** so a crash relaunches automatically:
+
+```bash
+make run-scheduler          # = python scripts/run_scheduler_supervised.py
+```
+
+The wrapper relaunches the scheduler on any non-zero exit with capped backoff
+(a clean Ctrl-C / exit 0 stops it). The scheduler reports liveness via a
+heartbeat file (`scheduler_heartbeat.json`, refreshed by a daemon thread), which
+is what `system_status` reads to detect a downed scheduler within ~90 s.
+
+For **boot persistence**, register the wrapper under an OS supervisor:
+- **Windows Task Scheduler** — action `…\.venv\Scripts\python.exe`, argument
+  `scripts\run_scheduler_supervised.py`, trigger *At startup*, setting *If the
+  task fails, restart every 1 minute*.
+- **NSSM** — `nssm install FoxRunnerScheduler <python> <repo>\scripts\run_scheduler_supervised.py`.
+- **systemd** — `ExecStart=<python> scripts/run_scheduler_supervised.py` + `Restart=always`.
+
 ## Production Checklist
 
 - Use PostgreSQL instead of SQLite.
-- Run Redis and Celery as supervised services.
+- Run Redis and Celery as supervised services (docker `restart: unless-stopped` or systemd/NSSM).
+- Run the CLI scheduler supervised (`make run-scheduler`) under an OS supervisor (see above).
+- Watch `GET /api/v1/system/status` (the frontend banner) for scheduler/Celery/Redis/DB health.
 - Monitor queued/running jobs and retry/cancel stuck jobs from the API.
 - Set `APP_ENV=production`.
 - Set a strong `AUTH_SECRET`.
