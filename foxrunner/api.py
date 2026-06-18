@@ -57,12 +57,14 @@ install_handlers(api)
 # Register per-app routers. The routers are defined in each app's ``api.py``
 # module and remain mostly empty until migration phases start filling them.
 from accounts.api import router as accounts_router  # noqa: E402
+from accounts.pushit_api import router as pushit_router  # noqa: E402
 from catalog.api import router as catalog_router  # noqa: E402
 from ops.admin_api import router as admin_router  # noqa: E402
 from ops.api import router as ops_router  # noqa: E402
 from ops.graph_api import router as graph_router  # noqa: E402
 
 api.add_router("", accounts_router)
+api.add_router("", pushit_router)
 api.add_router("", catalog_router)
 api.add_router("", ops_router)
 api.add_router("", admin_router)

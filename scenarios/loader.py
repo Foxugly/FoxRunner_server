@@ -36,6 +36,10 @@ class ScenarioDefinition:
     on_failure_steps: tuple[ScenarioStep, ...] = ()
     finally_steps: tuple[ScenarioStep, ...] = ()
     requires_enterprise_network: bool = False
+    # UUID of the user who owns this scenario (embedded in the definition by
+    # the catalog layer). The scheduler resolves the owner's per-user PushIT
+    # config from the DB so notifications follow whoever owns the scenario.
+    owner_user_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -109,9 +113,11 @@ def build_scenarios_from_map(items: dict[str, dict[str, Any]], source_name: str 
         on_success_steps = tuple(_build_step(step, source_name, scenario_id) for step in item.get("on_success", []))
         on_failure_steps = tuple(_build_step(step, source_name, scenario_id) for step in item.get("on_failure", []))
         finally_steps = tuple(_build_step(step, source_name, scenario_id) for step in item.get("finally_steps", []))
+        owner_user_id = item.get("owner_user_id")
         scenarios[scenario_id] = ScenarioDefinition(
             scenario_id=scenario_id,
             description=item.get("description", ""),
+            owner_user_id=str(owner_user_id) if owner_user_id else None,
             before_steps=before_steps,
             steps=steps,
             on_success_steps=on_success_steps,

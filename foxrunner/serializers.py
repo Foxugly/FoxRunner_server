@@ -62,3 +62,39 @@ class MagicLinkRequestIn(Schema):
 
 class MagicLinkExchangeIn(Schema):
     token: str
+
+
+# --------------------------------------------------------------------------
+# PushIT targets (per-user notification apps). The ``app_token`` is the
+# owner's own secret, returned to its owner only (every endpoint scopes to
+# ``request.auth``) so the frontend editor can display and modify it.
+# --------------------------------------------------------------------------
+
+
+class PushItTargetOut(Schema):
+    id: int
+    name: str
+    app_token: str
+    base_url: str
+    title: str
+    is_default: bool
+
+
+class PushItTargetIn(Schema):
+    name: str
+    app_token: str
+    base_url: str = "https://pushit-api.foxugly.com/api/v1"
+    title: str = "FoxRunner"
+    is_default: bool = False
+
+
+class PushItTargetPatchIn(Schema):
+    name: str | None = None
+    app_token: str | None = None
+    base_url: str | None = None
+    title: str | None = None
+    is_default: bool | None = None
+
+
+class PushItTestOut(Schema):
+    sent: bool
