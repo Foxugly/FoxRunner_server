@@ -17,7 +17,7 @@ class RunnerBridgeTests(TestCase):
     def test_success_writes_step_events_and_marks_success(self):
         from scenarios.events import StepEvent
 
-        def fake_run(scenario_id, dry_run, on_event=None):
+        def fake_run(scenario_id, dry_run, on_event=None, execution_id=None):
             on_event(StepEvent(step_id="steps[0]", event_type="step_started", step_type="open_url"))
             on_event(StepEvent(step_id="steps[0]", event_type="step_succeeded", step_type="open_url", duration_ms=12))
             return 0
@@ -32,7 +32,7 @@ class RunnerBridgeTests(TestCase):
         self.assertIn("step_succeeded", types)
 
     def test_failure_records_traceback_in_job_error(self):
-        def boom(scenario_id, dry_run, on_event=None):
+        def boom(scenario_id, dry_run, on_event=None, execution_id=None):
             raise RuntimeError("kaboom")
 
         with mock.patch("ops.runner_bridge._run_scenario_with_sink", side_effect=boom), self.assertRaises(RuntimeError):

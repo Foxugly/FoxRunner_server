@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from scenarios.events import StepEvent
 
 
-def _run_scenario_with_sink(scenario_id: str, dry_run: bool, on_event) -> int:
+def _run_scenario_with_sink(scenario_id: str, dry_run: bool, on_event, execution_id: str | None = None) -> int:
     """Build the DB-backed scheduler service and run one scenario with a sink.
 
     Kept as a tiny seam so tests can patch it without spinning Selenium.
@@ -18,7 +18,7 @@ def _run_scenario_with_sink(scenario_id: str, dry_run: bool, on_event) -> int:
     from catalog.services import build_service_from_db
 
     service = build_service_from_db()
-    return service.run_scenario(scenario_id, dry_run=dry_run, on_event=on_event)
+    return service.run_scenario(scenario_id, dry_run=dry_run, on_event=on_event, execution_id=execution_id)
 
 
 def execute_scenario_job(job_id: str, scenario_id: str, dry_run: bool) -> dict:
@@ -42,7 +42,7 @@ def execute_scenario_job(job_id: str, scenario_id: str, dry_run: bool) -> dict:
         )
 
     try:
-        exit_code = _run_scenario_with_sink(scenario_id, dry_run, sink)
+        exit_code = _run_scenario_with_sink(scenario_id, dry_run, sink, job_id)
         record.refresh_from_db()
         record.status = "success" if exit_code == 0 else "failed"
         record.exit_code = exit_code

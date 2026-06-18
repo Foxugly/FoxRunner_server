@@ -11,7 +11,9 @@ unauthenticated -- it's the only route hit before the auth layer boots.
 
 from __future__ import annotations
 
+from django.http import HttpResponse
 from ninja import Query, Router
+from ninja.errors import HttpError
 
 from accounts.permissions import require_user_scope
 from foxrunner.idempotency import get_idempotent_response, store_idempotent_response
@@ -124,8 +126,6 @@ def list_jobs_endpoint(
         # Non-admin: force the filter to ``current_user`` and reject
         # mismatched ``user_id`` with 403 (parity with FastAPI).
         if user_id is not None and user_id not in {str(current_user.id), current_user.email}:
-            from ninja.errors import HttpError
-
             raise HttpError(403, "Acces jobs refuse.")
         target_user = current_user
     rows, total = ops_services.list_jobs(
@@ -188,3 +188,20 @@ def retry_job_endpoint(request, job_id: str, user_id: str = Query(...)):
         current_user=current_user,
     )
     return 202, result
+
+
+_ARTIFACT_KINDS = {"screenshot": ("screenshots", ".png", "image/png"), "page_source": ("pages", ".html", "text/html; charset=utf-8")}
+
+
+@router.get("/jobs/{job_id}/artifacts/{kind}", tags=["jobs"])
+def get_job_artifact_endpoint(request, job_id: str, kind: str):
+    from app.config import load_config
+
+    if kind not in _ARTIFACT_KINDS:
+        raise HttpError(404, "Type d'artefact inconnu.")
+    record = ops_services.get_job_for_user(job_id, request.auth, is_superuser=request.auth.is_superuser)
+    subdir, ext, content_type = _ARTIFACT_KINDS[kind]
+    path = load_config().runtime.artifacts_dir / subdir / f"{record.job_id}{ext}"
+    if not path.exists():
+        raise HttpError(404, "Artefact introuvable.")
+    return HttpResponse(path.read_bytes(), content_type=content_type)
