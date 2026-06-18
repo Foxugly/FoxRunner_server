@@ -71,6 +71,7 @@ class RunTaskEventTests(unittest.TestCase):
         failed = [e for e in self.events if e.event_type == "step_failed"]
         self.assertTrue(failed)
         self.assertTrue(failed[0].traceback)
+        self.assertTrue(failed[0].message)
 
 
 if __name__ == "__main__":

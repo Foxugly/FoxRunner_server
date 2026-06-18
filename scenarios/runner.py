@@ -115,14 +115,14 @@ def run_task(
                     dry_run=dry_run,
                     parallel_safe_steps=parallel_safe_steps,
                 )
-            except Exception:
+            except Exception as exc:
                 _emit(
                     on_event,
                     step_id=step_id,
                     event_type="step_failed",
                     step_type=step.type,
                     level="error",
-                    message=context.get("error_message", ""),
+                    message=str(exc),
                     traceback=traceback.format_exc(),
                     duration_ms=int((time.monotonic() - started) * 1000),
                 )
