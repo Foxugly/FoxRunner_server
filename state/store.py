@@ -136,6 +136,42 @@ class LastRunStore:
         temp_file.replace(self.last_run_file)
 
 
+class HeartbeatStore:
+    """Liveness heartbeat for the long-running CLI scheduler.
+
+    The scheduler refreshes this file on a fixed cadence from a daemon thread,
+    so ``updated_at`` stays fresh even while the main loop is asleep waiting for
+    the next slot. When the process dies/crashes the thread dies with it and the
+    file goes stale — which is exactly how the Django backend
+    (``ops.services.system_status``) detects a downed scheduler.
+    """
+
+    def __init__(self, heartbeat_file: Path):
+        self.heartbeat_file = heartbeat_file
+        self.heartbeat_file.parent.mkdir(parents=True, exist_ok=True)
+
+    def beat(self, *, state: str | None = None, detail: str | None = None) -> None:
+        payload = {
+            "updated_at": _utc_now_iso(),
+            "pid": os.getpid(),
+            "state": state,
+            "detail": detail,
+        }
+        temp_file = self.heartbeat_file.with_suffix(".tmp")
+        with temp_file.open("w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False)
+        temp_file.replace(self.heartbeat_file)
+
+    def read(self) -> dict | None:
+        if not self.heartbeat_file.exists():
+            return None
+        try:
+            with self.heartbeat_file.open("r", encoding="utf-8") as handle:
+                return json.load(handle)
+        except (OSError, json.JSONDecodeError):
+            return None
+
+
 class HistoryStore:
     def __init__(self, history_jsonl_file: Path):
         self.history_jsonl_file = history_jsonl_file

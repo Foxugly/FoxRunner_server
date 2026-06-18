@@ -31,6 +31,7 @@ def _service(tmp: str, *, requires_network: bool = False) -> SchedulerService:
         execution_history_file=base / "executions.json",
         next_execution_file=base / "next.json",
         last_run_file=base / "last_run.json",
+        heartbeat_file=base / "scheduler_heartbeat.json",
         slots_file=base / "slots.json",
         scenarios_file=base / "scenarios.json",
         history_file=base / "history.jsonl",

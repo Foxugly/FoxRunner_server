@@ -281,3 +281,17 @@ class DeletedOut(Schema):
     """Mirrors ``api/schemas.py::DeletedPayload``. Used by DELETE /graph/subscriptions/{id}."""
 
     deleted: str
+
+
+class SystemStatusOut(Schema):
+    """GET /system/status — aggregate health for the frontend alarm banner.
+
+    ``status`` is ``ok`` | ``degraded`` | ``down``; ``down`` lists the failing
+    check names; ``checks`` maps each dependency (database, redis,
+    celery_worker, celery_beat, scheduler) to its own ``{status, detail, ...}``.
+    """
+
+    status: str
+    generated_at: str
+    down: list[str]
+    checks: dict[str, Any]

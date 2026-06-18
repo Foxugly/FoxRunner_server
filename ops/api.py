@@ -16,7 +16,7 @@ from ninja import Query, Router
 from accounts.permissions import require_user_scope
 from foxrunner.idempotency import get_idempotent_response, store_idempotent_response
 from ops import services as ops_services
-from ops.schemas import JobEventOut, JobOut, JobPage
+from ops.schemas import JobEventOut, JobOut, JobPage, SystemStatusOut
 
 router = Router()
 
@@ -24,6 +24,21 @@ router = Router()
 @router.get("/health", auth=None, tags=["runtime"], summary="Readiness probe")
 def health(request):
     return {"status": "ok"}
+
+
+@router.get(
+    "/system/status",
+    response=SystemStatusOut,
+    tags=["runtime"],
+    summary="System status (scheduler / celery / redis / db)",
+)
+def system_status_endpoint(request):
+    """Aggregate liveness of the scheduler, Celery worker/beat, Redis and DB.
+
+    Authenticated (any logged-in user) — operational health, not data. Polled
+    by the frontend's global alarm banner.
+    """
+    return ops_services.system_status()
 
 
 # --------------------------------------------------------------------------

@@ -65,6 +65,11 @@ class RuntimeConfig:
     execution_history_file: Path
     next_execution_file: Path
     last_run_file: Path
+    # Liveness heartbeat: the scheduler loop refreshes this on a fixed cadence
+    # (a daemon thread, so it stays fresh even during long pre-slot sleeps). The
+    # Django backend reads its `updated_at` to tell whether the CLI scheduler
+    # process is alive (see ops.services.system_status).
+    heartbeat_file: Path
     slots_file: Path
     scenarios_file: Path
     history_file: Path
@@ -119,6 +124,7 @@ def load_config() -> AppConfig:
             execution_history_file=state_dir / "executions.json",
             next_execution_file=state_dir / "next.json",
             last_run_file=state_dir / "last_run.json",
+            heartbeat_file=state_dir / "scheduler_heartbeat.json",
             history_file=state_dir / "history.jsonl",
             artifacts_dir=Path(_env_or_default("APP_ARTIFACTS_DIR", str(state_dir / "artifacts"))),
             log_file=_build_optional_log_file(state_dir),

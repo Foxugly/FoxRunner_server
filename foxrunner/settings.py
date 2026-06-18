@@ -272,6 +272,13 @@ CELERY_TIMEZONE = os.getenv("APP_TIMEZONE", "Europe/Brussels")
 CELERY_TASK_TRACK_STARTED = True
 
 CELERY_BEAT_SCHEDULE = {
+    # Liveness heartbeat for beat itself — stamps `now` into the
+    # celery_beat_heartbeat app setting so system_status can tell whether beat
+    # is still scheduling (read back with a generous staleness threshold).
+    "beat-heartbeat": {
+        "task": "ops.tasks.beat_heartbeat_task",
+        "schedule": int(os.getenv("BEAT_HEARTBEAT_INTERVAL_SECONDS", "60")),
+    },
     "renew-graph-subscriptions": {
         "task": "ops.tasks.renew_graph_subscriptions_task",
         "schedule": int(os.getenv("GRAPH_SUBSCRIPTION_RENEW_INTERVAL_SECONDS", "3600")),

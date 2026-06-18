@@ -731,6 +731,118 @@ def config_checks() -> dict[str, Any]:
     return {"status": "ok" if checks.get("database") == "ok" else "degraded", "checks": checks}
 
 
+# --- System status (scheduler / celery / redis / db) ---------------------
+#
+# Backs GET /api/v1/system/status, polled by the frontend's global alarm
+# banner. Each dependency is probed independently and never raises; the
+# overall ``status`` is derived from per-check results:
+#   - "down"     if any CRITICAL dependency (database, redis, scheduler) is down
+#   - "degraded" if only a non-critical one (celery worker/beat) is down
+#   - "ok"       otherwise
+# The CLI scheduler is a separate process on the same host; we infer its
+# liveness from the heartbeat file it refreshes (see scheduler.service).
+
+_CRITICAL_CHECKS = ("database", "redis", "scheduler")
+
+
+def _now_naive_utc() -> datetime:
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _check_database() -> dict[str, Any]:
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+        return {"status": "ok"}
+    except Exception as exc:  # pragma: no cover - exercised via mocking
+        return {"status": "down", "detail": str(exc)}
+
+
+def _check_redis() -> dict[str, Any]:
+    try:
+        from foxrunner.celery import celery_app
+
+        conn = celery_app.connection()
+        try:
+            conn.ensure_connection(max_retries=1, timeout=2)
+        finally:
+            conn.release()
+        return {"status": "ok"}
+    except Exception as exc:
+        return {"status": "down", "detail": str(exc)}
+
+
+def _check_celery_workers() -> dict[str, Any]:
+    try:
+        from foxrunner.celery import celery_app
+
+        replies = celery_app.control.ping(timeout=2) or []
+        if replies:
+            return {"status": "ok", "detail": f"{len(replies)} worker(s) responded"}
+        return {"status": "down", "detail": "no workers responded"}
+    except Exception as exc:
+        return {"status": "down", "detail": str(exc)}
+
+
+def _check_celery_beat() -> dict[str, Any]:
+    """Beat liveness via the heartbeat stamp written by ``beat_heartbeat_task``."""
+    from ops.models import AppSetting
+
+    stale_after = int(os.getenv("BEAT_HEARTBEAT_STALE_SECONDS", "180"))
+    try:
+        row = AppSetting.objects.filter(key="celery_beat_heartbeat").first()
+        at = _parse_iso_utc(row.value.get("at")) if row else None
+        if at is None:
+            return {"status": "down", "detail": "no beat heartbeat yet"}
+        age = (_now_naive_utc() - at).total_seconds()
+        if age <= stale_after:
+            return {"status": "ok", "detail": f"last beat {int(age)}s ago", "last_beat_at": _utc_iso(at)}
+        return {"status": "down", "detail": f"stale ({int(age)}s)", "last_beat_at": _utc_iso(at)}
+    except Exception as exc:
+        return {"status": "down", "detail": str(exc)}
+
+
+def _check_scheduler() -> dict[str, Any]:
+    """CLI scheduler liveness via its heartbeat file (shared filesystem)."""
+    from app.config import load_config
+    from state.store import HeartbeatStore
+
+    stale_after = int(os.getenv("SCHEDULER_HEARTBEAT_STALE_SECONDS", "90"))
+    try:
+        runtime = load_config().runtime
+        beat = HeartbeatStore(runtime.heartbeat_file).read()
+        at = _parse_iso_utc(beat.get("updated_at")) if beat else None
+        if at is None:
+            return {"status": "down", "detail": "scheduler not running (no heartbeat)"}
+        age = (_now_naive_utc() - at).total_seconds()
+        state = beat.get("state")
+        common = {"last_beat_at": _utc_iso(at), "state": state, "age_seconds": int(age)}
+        if age <= stale_after:
+            return {"status": "ok", "detail": f"alive ({state})", **common}
+        return {"status": "down", "detail": f"offline for {int(age)}s", **common}
+    except Exception as exc:
+        return {"status": "down", "detail": str(exc)}
+
+
+def system_status() -> dict[str, Any]:
+    """Aggregate health of every moving part the frontend banner watches."""
+    checks = {
+        "database": _check_database(),
+        "redis": _check_redis(),
+        "celery_worker": _check_celery_workers(),
+        "celery_beat": _check_celery_beat(),
+        "scheduler": _check_scheduler(),
+    }
+    down = [name for name, result in checks.items() if result.get("status") != "ok"]
+    if any(name in _CRITICAL_CHECKS for name in down):
+        overall = "down"
+    elif down:
+        overall = "degraded"
+    else:
+        overall = "ok"
+    return {"status": overall, "generated_at": _utc_iso(_now_naive_utc()), "checks": checks, "down": down}
+
+
 def db_stats() -> dict[str, Any]:
     """GET /admin/db-stats. Sync port of ``api/services/admin.py::db_stats``.
 

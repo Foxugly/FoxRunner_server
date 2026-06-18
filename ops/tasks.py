@@ -278,3 +278,23 @@ def _prune_artifacts_files(older_than_days: int) -> int:
                 path.unlink()
                 removed += 1
     return removed
+
+
+@celery_app.task(name="ops.tasks.beat_heartbeat_task")
+def beat_heartbeat_task() -> dict:
+    """Liveness heartbeat for Celery **beat**.
+
+    Beat itself has no readable "I'm alive" signal, so it periodically runs
+    this task which stamps ``now`` into the ``celery_beat_heartbeat`` app
+    setting. ``ops.services.system_status`` reads it back and reports beat as
+    down when the stamp goes stale — a missing/old stamp means beat stopped
+    scheduling (or the worker that runs the task is down).
+    """
+    from ops.models import AppSetting
+
+    now_iso = _utc_iso_z(_utc_now())
+    AppSetting.objects.update_or_create(
+        key="celery_beat_heartbeat",
+        defaults={"value": {"at": now_iso}, "description": "Celery beat liveness heartbeat (system_status)."},
+    )
+    return {"at": now_iso}

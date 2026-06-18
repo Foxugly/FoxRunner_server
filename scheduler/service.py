@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 import time
 import traceback
 from datetime import datetime
@@ -13,7 +14,14 @@ from network.vpn import pretty_print_result
 from scenarios.loader import ScenarioData, ScenarioDefinition
 from scenarios.runner import TaskRunResult, run_task
 from scheduler.model import TimeSlot, find_next_pending_execution, format_remaining
-from state.store import ExecutionStateStore, HistoryStore, LastRunStore, NextExecutionStore, ProcessLock
+from state.store import (
+    ExecutionStateStore,
+    HeartbeatStore,
+    HistoryStore,
+    LastRunStore,
+    NextExecutionStore,
+    ProcessLock,
+)
 
 
 def countdown_console(target: datetime, threshold_seconds: int, tz, logger: Logger) -> None:
@@ -62,6 +70,13 @@ class SchedulerService:
         self.next_execution_store = NextExecutionStore(self.runtime.next_execution_file)
         self.history_store = HistoryStore(self.runtime.history_file)
         self.last_run_store = LastRunStore(self.runtime.last_run_file)
+        self.heartbeat_store = HeartbeatStore(self.runtime.heartbeat_file)
+        # Current coarse state, published by the heartbeat thread so the backend
+        # can show *what* the scheduler is doing, not just that it's alive.
+        self._heartbeat_state = "starting"
+        # Beat well under the backend's staleness threshold (90s) so a single
+        # missed write never trips a false "offline".
+        self._heartbeat_interval = max(5, min(self.runtime.check_interval_seconds, 15))
 
     def choose_next_slot(self, now: datetime) -> tuple[datetime, TimeSlot, datetime]:
         return find_next_pending_execution(now, self.slots, self.state_store.has_executed)
@@ -270,6 +285,28 @@ class SchedulerService:
         result = self._run_once(synthetic_slot, scenario, slot_key, execution_time, dry_run=dry_run)
         return 0 if result.success else 2
 
+    def _start_heartbeat(self) -> threading.Thread:
+        """Spawn the daemon thread that keeps the liveness heartbeat fresh.
+
+        It beats immediately, then every ``_heartbeat_interval`` seconds, until
+        the process exits (daemon). Write errors are swallowed so a transient
+        disk hiccup never kills the heartbeat (a single missed beat is well
+        within the backend's staleness threshold).
+        """
+
+        def _beat_forever() -> None:
+            while True:
+                try:
+                    self.heartbeat_store.beat(state=self._heartbeat_state)
+                except Exception:
+                    pass
+                time.sleep(self._heartbeat_interval)
+
+        self.heartbeat_store.beat(state=self._heartbeat_state)  # first beat, synchronous
+        thread = threading.Thread(target=_beat_forever, name="scheduler-heartbeat", daemon=True)
+        thread.start()
+        return thread
+
     def loop(self, dry_run: bool, once: bool) -> int:
         network_alert_sent_at: datetime | None = None
         last_planned_slot_key: str | None = None
@@ -282,9 +319,16 @@ class SchedulerService:
             self.logger.info("Scheduler demarre.")
             self.logger.info(f"Timezone active: {self.runtime.timezone}")
 
+            # Liveness heartbeat (daemon thread): refreshes the heartbeat file on a
+            # fixed cadence so it stays fresh during long pre-slot sleeps. As a
+            # daemon it dies with the process, so a crash/exit stops the beats and
+            # the backend reports the scheduler offline within ~90s.
+            self._start_heartbeat()
+
             while True:
                 try:
                     now = datetime.now(self.runtime.timezone).replace(microsecond=0)
+                    self._heartbeat_state = "planning"
                     next_run, slot, day = self.choose_next_slot(now)
                     slot_key = slot.to_key(day)
                     scenario = self.scenarios[slot.scenario_id]
@@ -352,6 +396,7 @@ class SchedulerService:
                         continue
 
                     execution_time = datetime.now(self.runtime.timezone).replace(microsecond=0)
+                    self._heartbeat_state = "running"
                     result = self._run_once(
                         slot,
                         scenario,
@@ -361,6 +406,7 @@ class SchedulerService:
                         scheduled_for=next_run,
                     )
                     self._handle_task_result(result, execution_time, slot, scenario, slot_key)
+                    self._heartbeat_state = "planning"
                     if once:
                         return 0 if result.success else 2
                     time.sleep(self.runtime.check_interval_seconds)
