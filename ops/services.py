@@ -498,6 +498,45 @@ def _run_job_inline(job_id: str, scenario_id: str, dry_run: bool) -> None:
     threading.Thread(target=_target, name=f"job-{job_id}", daemon=True).start()
 
 
+def _dispatch_job(
+    *,
+    job: Job,
+    scenario_id: str,
+    dry_run: bool,
+    celery_message: str,
+    extra_payload: dict[str, Any] | None = None,
+) -> None:
+    """Dispatch a created job to Celery (or run it inline) + record the event.
+
+    Shared by :func:`enqueue_scenario_job` and :func:`retry_job_for_user`,
+    which previously copy-pasted this branch. When a Celery worker answers a
+    ping the job is sent to ``run_scenario_job`` and its task id is persisted;
+    otherwise it runs inline in a daemon thread. Either way a ``submitted``
+    event is appended. ``extra_payload`` (e.g. ``{"retry_of": ...}``) is
+    merged into the event payload for both transports.
+    """
+    extra = extra_payload or {}
+    if _celery_worker_available():
+        from ops.tasks import run_scenario_job
+
+        task = run_scenario_job.delay(job.job_id, scenario_id, dry_run)
+        set_celery_task_id(job.job_id, task.id)
+        append_job_event(
+            job_id=job.job_id,
+            event_type="submitted",
+            message=celery_message,
+            payload={"celery_task_id": task.id, **extra},
+        )
+    else:
+        append_job_event(
+            job_id=job.job_id,
+            event_type="submitted",
+            message="Exécution inline (sans Celery).",
+            payload=extra or None,
+        )
+        _run_job_inline(job.job_id, scenario_id, dry_run)
+
+
 def enqueue_scenario_job(
     *,
     user_id_str: str,
@@ -526,24 +565,12 @@ def enqueue_scenario_job(
         dry_run=dry_run,
         payload={"scenario_id": scenario_id},
     )
-    if _celery_worker_available():
-        from ops.tasks import run_scenario_job
-
-        task = run_scenario_job.delay(job.job_id, scenario_id, dry_run)
-        set_celery_task_id(job.job_id, task.id)
-        append_job_event(
-            job_id=job.job_id,
-            event_type="submitted",
-            message="Tâche Celery soumise.",
-            payload={"celery_task_id": task.id},
-        )
-    else:
-        append_job_event(
-            job_id=job.job_id,
-            event_type="submitted",
-            message="Exécution inline (sans Celery).",
-        )
-        _run_job_inline(job.job_id, scenario_id, dry_run)
+    _dispatch_job(
+        job=job,
+        scenario_id=scenario_id,
+        dry_run=dry_run,
+        celery_message="Tâche Celery soumise.",
+    )
     job.refresh_from_db()
     return serialize_job(job)
 
@@ -611,25 +638,13 @@ def retry_job_for_user(
         dry_run=source.dry_run,
         payload={**(source.payload or {}), "retry_of": source.job_id},
     )
-    if _celery_worker_available():
-        from ops.tasks import run_scenario_job
-
-        task = run_scenario_job.delay(retry.job_id, retry.target_id, retry.dry_run)
-        set_celery_task_id(retry.job_id, task.id)
-        append_job_event(
-            job_id=retry.job_id,
-            event_type="submitted",
-            message="Retry Celery soumis.",
-            payload={"celery_task_id": task.id, "retry_of": source.job_id},
-        )
-    else:
-        append_job_event(
-            job_id=retry.job_id,
-            event_type="submitted",
-            message="Exécution inline (sans Celery).",
-            payload={"retry_of": source.job_id},
-        )
-        _run_job_inline(retry.job_id, retry.target_id, retry.dry_run)
+    _dispatch_job(
+        job=retry,
+        scenario_id=retry.target_id,
+        dry_run=retry.dry_run,
+        celery_message="Retry Celery soumis.",
+        extra_payload={"retry_of": source.job_id},
+    )
     retry.refresh_from_db()
     write_audit(
         actor=current_user,
