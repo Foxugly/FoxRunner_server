@@ -305,6 +305,11 @@ MONITOR_REQUIRE_SCHEDULER = os.getenv("MONITOR_REQUIRE_SCHEDULER", "true").lower
 # Windows box with no Celery worker.
 RUN_JOBS_INLINE = os.getenv("RUN_JOBS_INLINE", "auto").lower()
 
+# Default staleness threshold (minutes) for `manage.py reconcile_jobs`. A
+# queued/running job that hasn't been touched for this long is presumed
+# orphaned (e.g. the worker/web process died mid-run) and is failed.
+JOB_STALE_MINUTES = int(os.getenv("JOB_STALE_MINUTES", "30"))
+
 
 # --- Internationalization / time ----------------------------------------
 
