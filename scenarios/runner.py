@@ -102,6 +102,7 @@ def run_task(
             started = time.monotonic()
             if not dry_run and _requires_driver(step.type) and driver is None:
                 driver = create_driver(config)
+            context.pop("__step_swallowed_error__", None)
             try:
                 driver = _execute_scenario_step(
                     step,
@@ -116,6 +117,8 @@ def run_task(
                     context=context,
                     dry_run=dry_run,
                     parallel_safe_steps=parallel_safe_steps,
+                    on_event=on_event,
+                    step_id=step_id,
                 )
             except Exception as exc:
                 _emit(
@@ -129,13 +132,16 @@ def run_task(
                     duration_ms=int((time.monotonic() - started) * 1000),
                 )
                 raise
-            _emit(
-                on_event,
-                step_id=step_id,
-                event_type="step_succeeded",
-                step_type=step.type,
-                duration_ms=int((time.monotonic() - started) * 1000),
-            )
+            # A continue_on_error step that swallowed its error already emitted
+            # a warning-level step_failed; do not also mark it succeeded (green).
+            if context.pop("__step_swallowed_error__", None) is None:
+                _emit(
+                    on_event,
+                    step_id=step_id,
+                    event_type="step_succeeded",
+                    step_type=step.type,
+                    duration_ms=int((time.monotonic() - started) * 1000),
+                )
 
         context["current_step"] = current_step
         _execute_hook_steps(
@@ -267,6 +273,8 @@ def _execute_scenario_step(
     context,
     dry_run: bool,
     parallel_safe_steps,
+    on_event: StepEventSink | None = None,
+    step_id: str | None = None,
 ) -> None:
     if not _should_execute(step, context):
         return
@@ -293,6 +301,8 @@ def _execute_scenario_step(
                         scenario_data=scenario_data,
                         context=context,
                         dry_run=dry_run,
+                        on_event=on_event,
+                        step_id=step_id,
                     ),
                 )
             if not dry_run and _requires_driver(step.type) and driver is None:
@@ -339,8 +349,20 @@ def _execute_scenario_step(
             return driver
         except Exception as exc:
             last_error = exc
-            if attempt_index < attempts - 1 and step.retry_delay_seconds > 0:
-                time.sleep(step.retry_delay_seconds * (step.retry_backoff_seconds**attempt_index))
+            if attempt_index < attempts - 1:
+                # A retry is pending: surface it as a non-green event so the
+                # live view shows the attempt was retried (not silently green).
+                _emit(
+                    on_event,
+                    step_id=step_id if step_id is not None else f"steps[?]:{step.type}",
+                    event_type="step_retrying",
+                    step_type=step.type,
+                    level="warning",
+                    message=str(exc),
+                    payload={"attempt": attempt_index + 1},
+                )
+                if step.retry_delay_seconds > 0:
+                    time.sleep(step.retry_delay_seconds * (step.retry_backoff_seconds**attempt_index))
 
     if last_error is not None:
         if step.continue_on_error:
@@ -348,6 +370,19 @@ def _execute_scenario_step(
             context["last_error_message"] = str(last_error)
             context["last_error_step"] = step.type
             logger.warning(f"Etape ignoree apres erreur ({step.type}): {last_error}")
+            # A continue_on_error step that actually failed must NOT render
+            # green. Emit a warning-level step_failed and flag the swallow so
+            # the calling loop skips its step_succeeded emit for this step.
+            _emit(
+                on_event,
+                step_id=step_id if step_id is not None else f"steps[?]:{step.type}",
+                event_type="step_failed",
+                step_type=step.type,
+                level="warning",
+                message=str(last_error),
+                payload={"continued": True},
+            )
+            context["__step_swallowed_error__"] = step_id if step_id is not None else step.type
             return driver
         raise last_error
     return driver
@@ -438,6 +473,7 @@ def _execute_hook_steps(
             continue
         _emit(on_event, step_id=step_id, event_type="step_started", step_type=step.type)
         started = time.monotonic()
+        context.pop("__step_swallowed_error__", None)
         try:
             driver_ref["driver"] = _execute_scenario_step(
                 step,
@@ -452,6 +488,8 @@ def _execute_hook_steps(
                 context=context,
                 dry_run=dry_run,
                 parallel_safe_steps=parallel_safe_steps,
+                on_event=on_event,
+                step_id=step_id,
             )
         except Exception as exc:
             _emit(
@@ -465,13 +503,16 @@ def _execute_hook_steps(
                 duration_ms=int((time.monotonic() - started) * 1000),
             )
             raise
-        _emit(
-            on_event,
-            step_id=step_id,
-            event_type="step_succeeded",
-            step_type=step.type,
-            duration_ms=int((time.monotonic() - started) * 1000),
-        )
+        # See the top-level loop: skip the green emit when the step's error was
+        # swallowed by continue_on_error (a warning step_failed was emitted).
+        if context.pop("__step_swallowed_error__", None) is None:
+            _emit(
+                on_event,
+                step_id=step_id,
+                event_type="step_succeeded",
+                step_type=step.type,
+                duration_ms=int((time.monotonic() - started) * 1000),
+            )
     # Only propagate the driver when hooks actually produced one; otherwise we
     # would clobber the driver already held by run_task and leak the original.
     if driver_ref["driver"] is not None:
