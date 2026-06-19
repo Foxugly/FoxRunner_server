@@ -4,7 +4,7 @@ from app.config import TaskConfig
 from app.logger import Logger
 from scenarios.events import StepEvent
 from scenarios.loader import ScenarioData, ScenarioDefinition, ScenarioStep
-from scenarios.runner import run_task
+from scenarios.runner import _execute_scenario_step, run_task
 
 
 class StepEventTests(unittest.TestCase):
@@ -84,6 +84,88 @@ class RunTaskEventTests(unittest.TestCase):
         ids = {e.step_id for e in self.events}
         self.assertIn("before_steps[0]", ids)
         self.assertIn("steps[0]", ids)
+
+    def test_continue_on_error_step_is_not_green(self):
+        # ``format_context`` without ``template`` raises; with
+        # continue_on_error the run keeps going but the step must NOT render
+        # green — it should emit a warning-level step_failed (continued=True).
+        scn = _scn(
+            [
+                ScenarioStep(type="format_context", payload={"key": "k"}, continue_on_error=True),
+                ScenarioStep(type="notify", payload={"message": "after"}),
+            ]
+        )
+        result = self._run(scn)
+        self.assertTrue(result.success)  # the run continued past the failure
+        step0 = [e for e in self.events if e.step_id == "steps[0]"]
+        types = {e.event_type for e in step0}
+        self.assertIn("step_failed", types)
+        self.assertNotIn("step_succeeded", types)
+        failed = next(e for e in step0 if e.event_type == "step_failed")
+        self.assertEqual(failed.level, "warning")
+        self.assertTrue(failed.payload.get("continued"))
+        # the following step still ran to success
+        self.assertIn(("steps[1]", "step_succeeded"), [(e.step_id, e.event_type) for e in self.events])
+
+    def test_group_children_emit_nested_events(self):
+        scn = _scn(
+            [
+                ScenarioStep(
+                    type="group",
+                    payload={
+                        "steps": [
+                            ScenarioStep(type="set_context", payload={"key": "a", "value": "1"}),
+                            ScenarioStep(type="set_context", payload={"key": "b", "value": "2"}),
+                        ]
+                    },
+                )
+            ]
+        )
+        self._run(scn)
+        ids = {(e.step_id, e.event_type) for e in self.events}
+        self.assertIn(("steps[0]>group[0]", "step_started"), ids)
+        self.assertIn(("steps[0]>group[0]", "step_succeeded"), ids)
+        self.assertIn(("steps[0]>group[1]", "step_started"), ids)
+        self.assertIn(("steps[0]>group[1]", "step_succeeded"), ids)
+
+
+class RetryEventTests(unittest.TestCase):
+    def test_step_retrying_emitted_before_each_backoff(self):
+        # A step that fails the first attempt then succeeds must emit a
+        # ``step_retrying`` event (warning, payload.attempt) before the retry.
+        events: list[StepEvent] = []
+        attempts = {"n": 0}
+
+        def flaky_handler(op_context, payload):
+            attempts["n"] += 1
+            if attempts["n"] == 1:
+                raise RuntimeError("transient")
+
+        # ``set_context`` is an atomic step type; injecting a flaky handler
+        # under that key lets us exercise the retry path deterministically.
+        step = ScenarioStep(type="set_context", payload={}, retry=1)
+        _execute_scenario_step(
+            step,
+            operation_registry={"set_context": flaky_handler},
+            driver=None,
+            config=TaskConfig(),
+            logger=Logger(debug_enabled=False),
+            notifier=None,
+            network_check=None,
+            network_check_by_key=None,
+            scenario_data=ScenarioData(pushovers={}, networks={}),
+            context={},
+            dry_run=False,
+            parallel_safe_steps=frozenset(),
+            on_event=events.append,
+            step_id="steps[0]",
+        )
+        retrying = [e for e in events if e.event_type == "step_retrying"]
+        self.assertEqual(len(retrying), 1)
+        self.assertEqual(retrying[0].level, "warning")
+        self.assertEqual(retrying[0].payload.get("attempt"), 1)
+        self.assertEqual(retrying[0].step_id, "steps[0]")
+        self.assertEqual(attempts["n"], 2)  # failed once, succeeded on retry
 
 
 if __name__ == "__main__":
