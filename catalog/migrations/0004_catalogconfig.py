@@ -3,7 +3,7 @@
 from django.db import migrations, models
 
 
-def seed_from_scenarios_file(apps, schema_editor):
+def seed_from_scenarios_file(apps, schema_editor):  # pragma: no cover
     """Best-effort seed of the singleton from the existing ``config/scenarios.json``.
 
     The ``data`` block was never in the DB before — it lived only in the JSON

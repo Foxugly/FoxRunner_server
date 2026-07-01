@@ -63,9 +63,7 @@ class CatalogConfigApiTest(TestCase):
         CatalogConfig.objects.all().delete()
 
         self.client = Client()
-        self.admin = User.objects.create_superuser(
-            email="admin@example.com", password="password123!"
-        )
+        self.admin = User.objects.create_superuser(email="admin@example.com", password="password123!")
         self.bob = User.objects.create_user(email="bob@example.com", password="password123!")
         self.admin_token = _login(self.client, "admin@example.com", "password123!")
         self.bob_token = _login(self.client, "bob@example.com", "password123!")
