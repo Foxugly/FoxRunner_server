@@ -85,3 +85,35 @@ class Slot(models.Model):
             # From migrations/versions/20260421_0011_operational_indexes.py
             models.Index(fields=["scenario", "enabled"], name="ix_slots_scenario_enabled"),
         ]
+
+
+class CatalogConfig(models.Model):
+    """Global catalogue configuration — the ``data`` block of scenarios.json.
+
+    Holds the pushover credentials, network profiles, and the default keys.
+    This is catalogue-global (NOT per-scenario) and a **singleton** (``pk=1``):
+    it is the source of truth, and ``catalog.services`` mirrors it into
+    ``config/scenarios.json`` for the CLI runner after every write.
+    """
+
+    pushovers = models.JSONField(default=dict, blank=True)
+    networks = models.JSONField(default=dict, blank=True)
+    default_pushover = models.CharField(max_length=128, default="", blank=True)
+    default_network = models.CharField(max_length=128, default="", blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "catalog_config"
+
+    def __str__(self) -> str:
+        return "catalog-config"
+
+    def save(self, *args, **kwargs):
+        # Enforce the singleton: there is only ever one row.
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def load(cls) -> CatalogConfig:
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj

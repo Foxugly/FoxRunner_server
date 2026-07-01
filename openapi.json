@@ -324,6 +324,66 @@
         "title": "AuditPage",
         "type": "object"
       },
+      "CatalogConfigIn": {
+        "description": "Full replacement of the catalogue ``data`` block. A pushover secret left\nblank or equal to the mask keeps the stored value (write-only secrets).",
+        "properties": {
+          "default_network": {
+            "default": "",
+            "title": "Default Network",
+            "type": "string"
+          },
+          "default_pushover": {
+            "default": "",
+            "title": "Default Pushover",
+            "type": "string"
+          },
+          "networks": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Networks",
+            "type": "object"
+          },
+          "pushovers": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Pushovers",
+            "type": "object"
+          }
+        },
+        "title": "CatalogConfigIn",
+        "type": "object"
+      },
+      "CatalogConfigOut": {
+        "description": "Global catalogue ``data`` block. Pushover ``token`` / ``user_key`` are\nwrite-only: they come back masked (``catalog.services.MASKED_SECRET``).",
+        "properties": {
+          "default_network": {
+            "default": "",
+            "title": "Default Network",
+            "type": "string"
+          },
+          "default_pushover": {
+            "default": "",
+            "title": "Default Pushover",
+            "type": "string"
+          },
+          "networks": {
+            "additionalProperties": true,
+            "title": "Networks",
+            "type": "object"
+          },
+          "pushovers": {
+            "additionalProperties": true,
+            "title": "Pushovers",
+            "type": "object"
+          }
+        },
+        "required": [
+          "pushovers",
+          "networks"
+        ],
+        "title": "CatalogConfigOut",
+        "type": "object"
+      },
       "ConfigChecksOut": {
         "properties": {
           "checks": {
@@ -3195,6 +3255,88 @@
         "summary": "Reset Password",
         "tags": [
           "auth"
+        ]
+      }
+    },
+    "/api/v1/catalog/config": {
+      "get": {
+        "operationId": "catalog_api_get_catalog_config_endpoint",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogConfigOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Erreur applicative renvoyee par le handler global ({code, message, details})."
+          }
+        },
+        "security": [
+          {
+            "JWTAuth": []
+          }
+        ],
+        "summary": "Get Catalog Config Endpoint",
+        "tags": [
+          "catalog"
+        ]
+      },
+      "put": {
+        "operationId": "catalog_api_update_catalog_config_endpoint",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CatalogConfigIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogConfigOut"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Erreur applicative renvoyee par le handler global ({code, message, details})."
+          }
+        },
+        "security": [
+          {
+            "JWTAuth": []
+          }
+        ],
+        "summary": "Update Catalog Config Endpoint",
+        "tags": [
+          "catalog"
         ]
       }
     },

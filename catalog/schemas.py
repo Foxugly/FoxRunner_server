@@ -233,6 +233,26 @@ class ScenarioDataOut(Schema):
     networks: list[str]
 
 
+class CatalogConfigOut(Schema):
+    """Global catalogue ``data`` block. Pushover ``token`` / ``user_key`` are
+    write-only: they come back masked (``catalog.services.MASKED_SECRET``)."""
+
+    default_pushover: str = ""
+    default_network: str = ""
+    pushovers: dict[str, Any]
+    networks: dict[str, Any]
+
+
+class CatalogConfigIn(Schema):
+    """Full replacement of the catalogue ``data`` block. A pushover secret left
+    blank or equal to the mask keeps the stored value (write-only secrets)."""
+
+    default_pushover: str = ""
+    default_network: str = ""
+    pushovers: dict[str, Any] = {}
+    networks: dict[str, Any] = {}
+
+
 # --------------------------------------------------------------------------
 # Planning + sync run (Phase 4.7). Mirrors
 # ``RunScenarioResponsePayload`` from ``api/schemas.py``: ``scenario_id``

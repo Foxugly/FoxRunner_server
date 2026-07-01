@@ -25,7 +25,7 @@ from accounts.models import User
 from accounts.permissions import require_user_scope, resolve_user
 from app.config import load_config
 from app.main import build_runtime_services_from_catalog
-from catalog.models import Scenario, ScenarioShare, Slot
+from catalog.models import CatalogConfig, Scenario, ScenarioShare, Slot
 from catalog.permissions import _is_scenario_owner, require_scenario_owner, scenario_role
 from ops.services import write_audit
 from scenarios.loader import (
@@ -98,7 +98,9 @@ def _build_scenarios_document(scenarios_file: Path) -> dict[str, Any]:
     """
     document = _load_json_dict(scenarios_file)
     document.setdefault("schema_version", 1)
-    document.setdefault("data", {})
+    # The ``data`` block (pushovers/networks/defaults) is DB-owned since P3:
+    # the CatalogConfig singleton is the source of truth, the file is output.
+    document["data"] = _catalog_data_for_document()
     document["scenarios"] = {record.scenario_id: record.definition for record in Scenario.objects.all().order_by("scenario_id")}
     return document
 
@@ -119,6 +121,87 @@ def _write_scenarios_file() -> None:
     except Exception as exc:
         raise HttpError(422, str(exc)) from exc
     _write_json_atomic(scenarios_file, document)
+
+
+# --------------------------------------------------------------------------
+# Global catalogue configuration (the ``data`` block). CatalogConfig singleton
+# is the source of truth; every write mirrors into ``config/scenarios.json``.
+# Pushover ``token`` / ``user_key`` are write-only: masked on read, preserved
+# on write when the caller sends back the mask or a blank value.
+# --------------------------------------------------------------------------
+
+MASKED_SECRET = "••••••••"  # ••••••••
+
+_PUSHOVER_SECRETS = ("token", "user_key")
+
+
+def _catalog_data_for_document() -> dict[str, Any]:
+    """The ``data`` block for ``scenarios.json``, built from the singleton."""
+    cfg = CatalogConfig.load()
+    data: dict[str, Any] = {}
+    if cfg.pushovers:
+        data["pushovers"] = cfg.pushovers
+    if cfg.networks:
+        data["networks"] = cfg.networks
+    if cfg.default_pushover:
+        data["default_pushover"] = cfg.default_pushover
+    if cfg.default_network:
+        data["default_network"] = cfg.default_network
+    return data
+
+
+def get_catalog_config() -> dict[str, Any]:
+    """Return the catalogue ``data`` with pushover secrets masked (read view)."""
+    cfg = CatalogConfig.load()
+    pushovers: dict[str, Any] = {}
+    for key, entry in (cfg.pushovers or {}).items():
+        masked = dict(entry or {})
+        for secret in _PUSHOVER_SECRETS:
+            if masked.get(secret):
+                masked[secret] = MASKED_SECRET
+        pushovers[key] = masked
+    return {
+        "default_pushover": cfg.default_pushover or "",
+        "default_network": cfg.default_network or "",
+        "pushovers": pushovers,
+        "networks": cfg.networks or {},
+    }
+
+
+@transaction.atomic
+def update_catalog_config(payload: dict[str, Any]) -> dict[str, Any]:
+    """Replace the catalogue ``data`` block, then mirror to ``scenarios.json``.
+
+    Write-only secrets: for each pushover, a ``token`` / ``user_key`` that is
+    blank or still equal to :data:`MASKED_SECRET` keeps the previously stored
+    value; a real new value replaces it.
+    """
+    cfg = CatalogConfig.load()
+    existing = cfg.pushovers or {}
+    merged: dict[str, Any] = {}
+    for key, entry in (payload.get("pushovers") or {}).items():
+        entry = dict(entry or {})
+        previous = existing.get(key) or {}
+        for secret in _PUSHOVER_SECRETS:
+            value = entry.get(secret)
+            if value and value != MASKED_SECRET:
+                continue  # a real new value replaces the stored one
+            if previous.get(secret):
+                entry[secret] = previous[secret]  # keep the stored secret
+            else:
+                # No prior value and nothing real supplied: never persist the
+                # mask sentinel — drop it so validation flags the missing secret.
+                entry.pop(secret, None)
+        merged[key] = entry
+
+    cfg.pushovers = merged
+    cfg.networks = payload.get("networks") or {}
+    cfg.default_pushover = payload.get("default_pushover") or ""
+    cfg.default_network = payload.get("default_network") or ""
+    cfg.save()
+    # Mirror DB -> file (validates; any error is HttpError(422) and rolls back).
+    _write_scenarios_file()
+    return get_catalog_config()
 
 
 def sync_slots_file() -> None:
