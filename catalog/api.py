@@ -17,6 +17,8 @@ from accounts.services import timezone_for_user
 from app.config import load_config
 from catalog import services as scenario_services
 from catalog.schemas import (
+    CatalogConfigIn,
+    CatalogConfigOut,
     DeletedOut,
     HistoryPage,
     RunOut,
@@ -385,6 +387,31 @@ def get_user_scenario_data_endpoint(request, user_id: str):
     if not qs.exists():
         raise HttpError(404, "Aucun scenario pour cet utilisateur.")
     return scenario_services.aggregate_scenario_data()
+
+
+# --------------------------------------------------------------------------
+# Global catalogue configuration (P3). The ``data`` block of scenarios.json
+# (pushover credentials, network profiles, defaults) is catalogue-global and
+# holds shared secrets, so read/write are superuser-only. Pushover secrets are
+# masked on read and write-only on update (see ``catalog.services``).
+# --------------------------------------------------------------------------
+
+
+def _require_superuser(request) -> None:
+    if not request.auth.is_superuser:
+        raise HttpError(403, "Réservé aux administrateurs.")
+
+
+@router.get("/catalog/config", response=CatalogConfigOut, tags=["catalog"])
+def get_catalog_config_endpoint(request):
+    _require_superuser(request)
+    return scenario_services.get_catalog_config()
+
+
+@router.put("/catalog/config", response=CatalogConfigOut, tags=["catalog"])
+def update_catalog_config_endpoint(request, payload: CatalogConfigIn):
+    _require_superuser(request)
+    return scenario_services.update_catalog_config(payload.dict())
 
 
 # --------------------------------------------------------------------------
