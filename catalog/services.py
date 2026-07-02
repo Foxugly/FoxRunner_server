@@ -46,6 +46,7 @@ STEP_COLLECTIONS = frozenset({"before_steps", "steps", "on_success", "on_failure
 _LOCKS_GUARD = threading.Lock()
 _LOCKS: dict[str, threading.Lock] = defaultdict(threading.Lock)
 _SLOTS_FILE_LOCK = threading.Lock()
+_CATALOG_CONFIG_LOCK = threading.Lock()
 
 
 def _lock_for(scenario_id: str) -> threading.Lock:
@@ -194,13 +195,26 @@ def update_catalog_config(payload: dict[str, Any]) -> dict[str, Any]:
                 entry.pop(secret, None)
         merged[key] = entry
 
-    cfg.pushovers = merged
-    cfg.networks = payload.get("networks") or {}
-    cfg.default_pushover = payload.get("default_pushover") or ""
-    cfg.default_network = payload.get("default_network") or ""
-    cfg.save()
-    # Mirror DB -> file (validates; any error is HttpError(422) and rolls back).
-    _write_scenarios_file()
+    networks = payload.get("networks") or {}
+    default_pushover = payload.get("default_pushover") or ""
+    default_network = payload.get("default_network") or ""
+
+    # Reject a default that points at nothing — it saves fine but breaks the CLI
+    # runner at load time. Fail early with 422 (rolls back the transaction).
+    if default_pushover and default_pushover not in merged:
+        raise HttpError(422, f"Le pushover par défaut « {default_pushover} » n'existe pas.")
+    if default_network and default_network not in networks:
+        raise HttpError(422, f"Le réseau par défaut « {default_network} » n'existe pas.")
+
+    # Serialize concurrent superuser writes (single file being rewritten).
+    with _CATALOG_CONFIG_LOCK:
+        cfg.pushovers = merged
+        cfg.networks = networks
+        cfg.default_pushover = default_pushover
+        cfg.default_network = default_network
+        cfg.save()
+        # Mirror DB -> file (validates; any error is HttpError(422) and rolls back).
+        _write_scenarios_file()
     return get_catalog_config()
 
 

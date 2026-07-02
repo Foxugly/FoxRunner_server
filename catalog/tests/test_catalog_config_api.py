@@ -149,6 +149,28 @@ class CatalogConfigApiTest(TestCase):
         self.assertEqual(cfg.pushovers["main"]["user_key"], "new-user")  # replaced
         self.assertEqual(cfg.pushovers["main"]["sound"], "pushover")
 
+    def test_put_rejects_default_pushover_not_in_pushovers(self):
+        payload = {
+            "default_pushover": "ghost",
+            "default_network": "",
+            "pushovers": {"main": {"token": "t", "user_key": "u"}},
+            "networks": {},
+        }
+        response = self._put(payload, self.admin_token)
+        self.assertEqual(response.status_code, 422, response.content)
+        # Nothing persisted on the rejected write.
+        self.assertEqual(CatalogConfig.load().pushovers, {})
+
+    def test_put_rejects_default_network_not_in_networks(self):
+        payload = {
+            "default_pushover": "",
+            "default_network": "ghost",
+            "pushovers": {},
+            "networks": {"office": {"office_ipv4_networks": []}},
+        }
+        response = self._put(payload, self.admin_token)
+        self.assertEqual(response.status_code, 422, response.content)
+
     def test_put_drops_mask_for_new_entry_without_prior_secret(self):
         # A brand-new pushover whose token is only the mask must NOT persist the
         # mask sentinel as a real credential.
