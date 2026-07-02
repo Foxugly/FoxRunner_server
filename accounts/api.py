@@ -70,6 +70,7 @@ def jwt_login(request) -> dict[str, str]:
 def jwt_logout(request) -> dict[str, str]:
     """Blacklist the supplied refresh token (best-effort). Tolerant if the body
     has no / an invalid refresh so a stale client can still 'log out'."""
+    import contextlib
     import json
 
     from rest_framework_simplejwt.exceptions import TokenError
@@ -77,15 +78,11 @@ def jwt_logout(request) -> dict[str, str]:
     raw = request.body.decode("utf-8") if request.body else ""
     token = ""
     if raw:
-        try:
+        with contextlib.suppress(json.JSONDecodeError):
             token = (json.loads(raw) or {}).get("refresh", "")
-        except json.JSONDecodeError:
-            token = ""
     if token:
-        try:
+        with contextlib.suppress(TokenError):
             RefreshToken(token).blacklist()
-        except TokenError:
-            pass
     return {"status": "ok"}
 
 
