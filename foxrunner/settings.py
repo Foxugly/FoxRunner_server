@@ -200,6 +200,7 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
 }
 
+
 def _parse_refresh_lifetime():
     from datetime import timedelta
 
