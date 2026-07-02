@@ -3117,7 +3117,7 @@
     },
     "/api/v1/auth/jwt/logout": {
       "post": {
-        "description": "Accepted for client compatibility. JWT lifetime is bounded server-side.",
+        "description": "Blacklist the supplied refresh token (best-effort). Tolerant if the body\nhas no / an invalid refresh so a stale client can still 'log out'.",
         "operationId": "accounts_api_jwt_logout",
         "parameters": [],
         "responses": {
@@ -3135,7 +3135,7 @@
             "description": "Erreur applicative renvoyee par le handler global ({code, message, details})."
           }
         },
-        "summary": "Logout (no-op for bearer transport)",
+        "summary": "Logout (revokes the refresh token)",
         "tags": [
           "auth"
         ]
