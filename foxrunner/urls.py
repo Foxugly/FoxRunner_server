@@ -18,6 +18,10 @@ from foxrunner.api import api
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/v1/auth/", include("djoser.urls")),
-    path("api/v1/auth/jwt/", include("djoser.urls.jwt")),
+    # djoser.urls.jwt patterns are already prefixed with ``jwt/`` (create/
+    # refresh/verify), so mount them at ``auth/`` — NOT ``auth/jwt/`` — to get
+    # the documented ``/api/v1/auth/jwt/{create,refresh,verify}`` paths (and
+    # avoid the doubled ``auth/jwt/jwt/...``).
+    path("api/v1/auth/", include("djoser.urls.jwt")),
     path("api/v1/", api.urls),
 ]
