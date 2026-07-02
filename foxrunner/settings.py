@@ -200,9 +200,19 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
 }
 
+
+def _parse_refresh_lifetime():
+    from datetime import timedelta
+
+    return timedelta(seconds=int(os.getenv("AUTH_JWT_REFRESH_LIFETIME_SECONDS", "2592000")))
+
+
 SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
     "ACCESS_TOKEN_LIFETIME": _parse_token_lifetime(),
+    "REFRESH_TOKEN_LIFETIME": _parse_refresh_lifetime(),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
 }
 
 DJOSER = {

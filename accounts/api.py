@@ -59,12 +59,30 @@ def jwt_login(request) -> dict[str, str]:
     if user is None or not user.is_active:
         raise HttpError(401, "Identifiants invalides.")
     refresh = RefreshToken.for_user(user)
-    return {"access_token": str(refresh.access_token), "token_type": "bearer"}
+    return {
+        "access_token": str(refresh.access_token),
+        "refresh_token": str(refresh),
+        "token_type": "bearer",
+    }
 
 
-@router.post("/auth/jwt/logout", auth=None, summary="Logout (no-op for bearer transport)")
+@router.post("/auth/jwt/logout", auth=None, summary="Logout (revokes the refresh token)")
 def jwt_logout(request) -> dict[str, str]:
-    """Accepted for client compatibility. JWT lifetime is bounded server-side."""
+    """Blacklist the supplied refresh token (best-effort). Tolerant if the body
+    has no / an invalid refresh so a stale client can still 'log out'."""
+    import contextlib
+    import json
+
+    from rest_framework_simplejwt.exceptions import TokenError
+
+    raw = request.body.decode("utf-8") if request.body else ""
+    token = ""
+    if raw:
+        with contextlib.suppress(json.JSONDecodeError):
+            token = (json.loads(raw) or {}).get("refresh", "")
+    if token:
+        with contextlib.suppress(TokenError):
+            RefreshToken(token).blacklist()
     return {"status": "ok"}
 
 
@@ -137,7 +155,11 @@ def magic_link_exchange(request, payload: MagicLinkExchangeIn) -> dict[str, str]
         raise HttpError(400, "Lien invalide.") from None
 
     refresh = RefreshToken.for_user(user)
-    return {"access_token": str(refresh.access_token), "token_type": "bearer"}
+    return {
+        "access_token": str(refresh.access_token),
+        "refresh_token": str(refresh),
+        "token_type": "bearer",
+    }
 
 
 @router.get("/users/me", response=UserOut)

@@ -47,6 +47,17 @@ class JwtLoginTest(_AuthMixin, TestCase):
         self.assertTrue(body["access_token"])
         self.assertEqual(body["token_type"], "bearer")
 
+    def test_form_login_returns_refresh_token(self):
+        response = self.client.post(
+            "/api/v1/auth/jwt/login",
+            data="username=alice@example.com&password=password123!",
+            content_type="application/x-www-form-urlencoded",
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        body = response.json()
+        self.assertIn("refresh_token", body)
+        self.assertTrue(body["refresh_token"])
+
     def test_form_login_accepts_email_alias(self):
         response = self.client.post(
             "/api/v1/auth/jwt/login",
@@ -93,6 +104,56 @@ class JwtLogoutTest(TestCase):
         response = self.client.post("/api/v1/auth/jwt/logout")
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(response.json(), {"status": "ok"})
+
+
+class RefreshRotationTest(TestCase):
+    """Refresh flow: rotation blacklists the old refresh; logout revokes it."""
+
+    def setUp(self):
+        self.client = Client()
+        self.user = User.objects.create_user(email="rot@example.com", password="password123!")
+
+    def _login(self) -> dict:
+        response = self.client.post(
+            "/api/v1/auth/jwt/login",
+            data="username=rot@example.com&password=password123!",
+            content_type="application/x-www-form-urlencoded",
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        return response.json()
+
+    def test_refresh_rotates_and_blacklists_old(self):
+        old_refresh = self._login()["refresh_token"]
+        r1 = self.client.post(
+            "/api/v1/auth/jwt/refresh",
+            data={"refresh": old_refresh},
+            content_type="application/json",
+        )
+        self.assertEqual(r1.status_code, 200, r1.content)
+        self.assertIn("access", r1.json())
+        self.assertIn("refresh", r1.json())
+        # Reusing the OLD refresh must fail (blacklisted after rotation).
+        r2 = self.client.post(
+            "/api/v1/auth/jwt/refresh",
+            data={"refresh": old_refresh},
+            content_type="application/json",
+        )
+        self.assertEqual(r2.status_code, 401, r2.content)
+
+    def test_logout_blacklists_refresh(self):
+        refresh = self._login()["refresh_token"]
+        out = self.client.post(
+            "/api/v1/auth/jwt/logout",
+            data={"refresh": refresh},
+            content_type="application/json",
+        )
+        self.assertEqual(out.status_code, 200, out.content)
+        r = self.client.post(
+            "/api/v1/auth/jwt/refresh",
+            data={"refresh": refresh},
+            content_type="application/json",
+        )
+        self.assertEqual(r.status_code, 401, r.content)
 
 
 class UsersMeTest(_AuthMixin, TestCase):
