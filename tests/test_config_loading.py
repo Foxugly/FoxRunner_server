@@ -7,18 +7,18 @@ from scenarios.loader import load_network_config_from_scenarios, load_scenario_d
 
 class ConfigLoadingTests(unittest.TestCase):
     def test_load_slots_and_scenarios(self):
-        slots = load_slots(Path("config/slots.json"))
-        scenarios = load_scenarios(Path("config/scenarios.json"))
+        slots = load_slots(Path("tests/fixtures/slots.json"))
+        scenarios = load_scenarios(Path("tests/fixtures/scenarios.json"))
         self.assertGreaterEqual(len(slots), 1)
         self.assertIn("solidaris_pointer", scenarios)
         self.assertTrue(scenarios["solidaris_pointer"].requires_enterprise_network)
 
     def test_load_network_from_scenarios(self):
-        config = load_network_config_from_scenarios(Path("config/scenarios.json"))
+        config = load_network_config_from_scenarios(Path("tests/fixtures/scenarios.json"))
         self.assertIn("sm-ms.lan", config.office_dns_suffixes)
 
     def test_load_named_data_from_scenarios(self):
-        data = load_scenario_data(Path("config/scenarios.json"))
+        data = load_scenario_data(Path("tests/fixtures/scenarios.json"))
         self.assertIn("default", data.pushovers)
         self.assertIn("office", data.networks)
         self.assertEqual(data.default_pushover_key, "default")

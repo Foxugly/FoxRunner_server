@@ -1,0 +1,18 @@
+{
+  "slots": [
+    {
+      "id": "weekday_morning",
+      "days": [0, 1, 2, 3, 4],
+      "start": "08:00",
+      "end": "08:15",
+      "scenario": "solidaris_pointer"
+    },
+    {
+      "id": "weekday_midday",
+      "days": [0, 1, 2, 3, 4],
+      "start": "12:30",
+      "end": "12:35",
+      "scenario": "solidaris_pointer"
+    }
+  ]
+}
