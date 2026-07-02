@@ -7,6 +7,11 @@
 .ruff_cache/
 .runtime/
 .venv/
+
+# Runtime catalogue data — written by the app (projection of the DB catalog).
+# Tracked seeds are the *.example.json files; the real files stay per-machine.
+/config/scenarios.json
+/config/slots.json
 __pycache__/
 *.py[cod]
 *.sqlite
