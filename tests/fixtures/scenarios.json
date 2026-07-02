@@ -5,14 +5,14 @@
     "default_network": "office",
     "pushovers": {
       "default": {
-        "token": "a2crj657a1atapj1v12nm4iwpxd6q9",
-        "user_key": "ujetaf4mnay3kv51aswyh5giuuuf17",
+        "token": "test-pushover-token",
+        "user_key": "test-pushover-user-key",
         "sound": "vibrate",
         "timeout_seconds": 20
       },
       "ops": {
-        "token": "a2crj657a1atapj1v12nm4iwpxd6q9",
-        "user_key": "ujetaf4mnay3kv51aswyh5giuuuf17",
+        "token": "test-pushover-token",
+        "user_key": "test-pushover-user-key",
         "sound": "pushover",
         "timeout_seconds": 20
       }
@@ -110,7 +110,7 @@
       "steps": [
         {
           "type": "open_url",
-          "url": "https://solidaris.get.be/Primetime/webapp/?locale=fr"
+          "url": "https://example.invalid/app/?locale=fr"
         },
         {
           "type": "sleep_random",
@@ -122,17 +122,6 @@
           "by": "id",
           "timeout": 30,
           "locator": "login"
-        },
-        {
-          "type": "sleep_random",
-          "min_seconds": 5,
-          "max_seconds": 10
-        },
-        {
-          "type": "click",
-          "by": "xpath",
-          "timeout": 30,
-          "locator": "//button[normalize-space()='Pointer']"
         },
         {
           "type": "sleep",
