@@ -1,7 +1,7 @@
 """Top-level URL configuration.
 
 All API routes live under ``/api/v1/``:
-    - ``/api/v1/auth/*``      — djoser (register, password reset)
+    - ``/api/v1/auth/*``      — Ninja auth (register/activate, password reset)
     - ``/api/v1/auth/jwt/*``  — djoser JWT create/refresh + Ninja wrappers
     - ``/api/v1/*``           — Ninja routers for the rest of the API
 
@@ -17,7 +17,12 @@ from foxrunner.api import api
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("api/v1/auth/", include("djoser.urls")),
+    # Registration is owned by the Ninja router (``accounts.api.register`` /
+    # ``activate``), which creates the user *inactive* and emails a
+    # TimestampSigner activation link -- the fleet self-service pattern.
+    # djoser's ``users/`` register route is intentionally NOT mounted: it
+    # would create *active* accounts and bypass email activation. Only the
+    # JWT create/refresh/verify routes below are still delegated to djoser.
     # djoser.urls.jwt patterns are already prefixed with ``jwt/`` (create/
     # refresh/verify), so mount them at ``auth/`` — NOT ``auth/jwt/`` — to get
     # the documented ``/api/v1/auth/jwt/{create,refresh,verify}`` paths (and

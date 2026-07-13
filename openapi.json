@@ -1,6 +1,19 @@
 {
   "components": {
     "schemas": {
+      "ActivateIn": {
+        "properties": {
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token"
+        ],
+        "title": "ActivateIn",
+        "type": "object"
+      },
       "AdminUserPatchIn": {
         "description": "PATCH body for ``/admin/users/{target_user_id}``.\n\nMirrors ``api/schemas.py::AdminUserUpdatePayload``. All fields are\noptional and only applied when present.",
         "properties": {
@@ -1404,6 +1417,24 @@
           "sent"
         ],
         "title": "PushItTestOut",
+        "type": "object"
+      },
+      "RegisterIn": {
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "password": {
+            "title": "Password",
+            "type": "string"
+          }
+        },
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "RegisterIn",
         "type": "object"
       },
       "ResetPasswordIn": {
@@ -3044,6 +3075,42 @@
         ]
       }
     },
+    "/api/v1/auth/activate": {
+      "post": {
+        "description": "Validate the activation token and flip the account live.\n\n410 if the link has expired, 400 if it is invalid / unknown. Activating\nan already-active account is idempotent (re-affirms the flags).",
+        "operationId": "accounts_api_activate",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActivateIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Erreur applicative renvoyee par le handler global ({code, message, details})."
+          }
+        },
+        "summary": "Activate a pending account",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/api/v1/auth/forgot-password": {
       "post": {
         "description": "Silent for unknown emails (no enumeration).",
@@ -3217,6 +3284,51 @@
           }
         },
         "summary": "Magic Link Request",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/v1/auth/register": {
+      "post": {
+        "description": "Create a pending account and email an activation link.\n\nAnti-enumeration: always returns ``202 {status: queued}`` regardless of\nwhether the email is already taken, so the endpoint never reveals which\naddresses have accounts. The new user is created *inactive* and\n*unverified*; it cannot log in until the activation link is followed.\n\n- unknown email  -> create inactive user + send activation link\n- pending email  -> resend the activation link (password untouched)\n- active email   -> silent no-op (the owner uses forgot-password instead)\n\nPassword strength is validated first (independent of email existence, so\nit leaks nothing); a weak password returns 422.",
+        "operationId": "accounts_api_register",
+        "parameters": [],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterIn"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Accepted"
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorOut"
+                }
+              }
+            },
+            "description": "Erreur applicative renvoyee par le handler global ({code, message, details})."
+          }
+        },
+        "summary": "Self-service registration (email activation)",
         "tags": [
           "auth"
         ]
