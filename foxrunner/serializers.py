@@ -47,6 +47,15 @@ class UserPatchIn(Schema):
     password: str | None = None
 
 
+class RegisterIn(Schema):
+    email: str
+    password: str
+
+
+class ActivateIn(Schema):
+    token: str
+
+
 class ForgotPasswordIn(Schema):
     email: str
 

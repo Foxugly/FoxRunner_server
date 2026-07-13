@@ -10,7 +10,7 @@ GRAPH_BASE_URL=https://graph.microsoft.com/v1.0
 GRAPH_TENANT_ID=
 GRAPH_CLIENT_ID=
 GRAPH_CLIENT_SECRET=
-GRAPH_MAIL_SENDER=
+GRAPH_SENDER=
 GRAPH_WEBHOOK_CLIENT_STATE=
 APP_PASSWORD_RESET_URL=http://localhost:4200/reset-password
 ```
@@ -27,7 +27,7 @@ Admin consent is required for application permissions.
 Password reset uses:
 
 ```text
-POST /users/{GRAPH_MAIL_SENDER}/sendMail
+POST /users/{GRAPH_SENDER}/sendMail
 ```
 
 If `GRAPH_MAIL_ENABLED=false`, FoxRunner falls back to SMTP configuration.
