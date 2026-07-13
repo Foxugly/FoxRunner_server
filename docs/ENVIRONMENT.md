@@ -44,7 +44,7 @@ All other env vars (APP_ENV, APP_TIMEZONE, CELERY_BROKER_URL, GRAPH_*, RETENTION
 
 - `GRAPH_MAIL_ENABLED`: use Graph mail instead of SMTP fallback.
 - `GRAPH_TENANT_ID`, `GRAPH_CLIENT_ID`, `GRAPH_CLIENT_SECRET`: Graph app credentials.
-- `GRAPH_MAIL_SENDER`: sender mailbox.
+- `GRAPH_SENDER`: sender mailbox.
 - `GRAPH_WEBHOOK_CLIENT_STATE`: global webhook validation secret. Required in production. Webhooks accept deliveries whose `clientState` matches either the value stored on the target subscription at creation time or this global value, which supports rotation windows.
 - `GRAPH_WEBHOOK_REQUIRE_SUBSCRIPTION`: require known subscription ids.
 - `GRAPH_SUBSCRIPTION_RENEW_*`: renewal task controls.

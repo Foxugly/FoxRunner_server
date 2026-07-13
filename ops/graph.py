@@ -42,7 +42,7 @@ def _env_client_secret() -> str:
 
 
 def _env_mail_sender() -> str:
-    return os.getenv("GRAPH_MAIL_SENDER", "")
+    return os.getenv("GRAPH_SENDER", "")
 
 
 def _env_global_client_state() -> str:
@@ -76,7 +76,7 @@ def send_graph_mail(*, to: str, subject: str, body: str, sender: str | None = No
     """Send a single mail via Graph (sync). Mirrors ``api/graph.py::send_graph_mail``."""
     sender_address = sender or _env_mail_sender()
     if not sender_address:
-        raise RuntimeError("GRAPH_MAIL_SENDER doit etre configure.")
+        raise RuntimeError("GRAPH_SENDER doit etre configure.")
     token = get_graph_access_token()
     response = httpx.post(
         f"{GRAPH_BASE_URL}/users/{sender_address}/sendMail",
